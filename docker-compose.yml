@@ -1,0 +1,202 @@
+version: "3.9"
+
+networks:
+  yalahaji-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  redis-data:
+  meili-data:
+  minio-data:
+
+services:
+
+  # ── MySQL 8 ───────────────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: yalahaji-mysql
+    restart: unless-stopped
+    ports:
+      - "${MYSQL_HOST_PORT:-3306}:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE:      ${MYSQL_DATABASE}
+      MYSQL_USER:          ${MYSQL_USER}
+      MYSQL_PASSWORD:      ${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - yalahaji-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── Redis 7 ───────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: yalahaji-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - yalahaji-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── MeiliSearch v1.9 ──────────────────────────────────────────────────────────
+  meilisearch:
+    image: getmeili/meilisearch:v1.9
+    container_name: yalahaji-meili
+    restart: unless-stopped
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_MASTER_KEY:   ${MEILI_MASTER_KEY}
+      MEILI_ENV:          development
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meili-data:/meili_data
+    networks:
+      - yalahaji-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7700/health || curl -sf http://localhost:7700/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── MinIO — API :9000 · Console :9001 ─────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: yalahaji-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    networks:
+      - yalahaji-net
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── NestJS API :4000 ──────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: yalahaji-api
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    env_file: .env
+    environment:
+      NODE_ENV:            production
+      PORT:                4000
+      DATABASE_URL:        mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      REDIS_HOST:          redis
+      REDIS_PORT:          6379
+      MEILISEARCH_URL:     http://meilisearch:7700
+      MEILISEARCH_KEY:     ${MEILI_MASTER_KEY}
+      MINIO_ENDPOINT:      minio
+      MINIO_PORT:          9000
+      MINIO_USE_SSL:       "false"
+      MINIO_ACCESS_KEY:    ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY:    ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET:        ${MINIO_BUCKET}
+      MINIO_PUBLIC_URL:    http://localhost:9000/${MINIO_BUCKET}
+      JWT_SECRET:          ${JWT_SECRET}
+      JWT_EXPIRES_IN:      7d
+      STOREFRONT_URL:      http://localhost:3000
+      ADMIN_URL:           http://localhost:3001
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
+      minio:
+        condition: service_started
+    networks:
+      - yalahaji-net
+    healthcheck:
+      # Use 127.0.0.1 — busybox wget resolves "localhost" to ::1 (IPv6) first,
+      # but Fastify binds to 0.0.0.0 (IPv4), which refuses the connection.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 120s
+      retries: 10
+
+  # ── Next.js Storefront :3000 ──────────────────────────────────────────────────
+  storefront:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yalahaji-storefront
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV:                    production
+      PORT:                        3000
+      NEXT_PUBLIC_API_URL:         http://localhost:4000/api/v1
+      NEXT_PUBLIC_SITE_URL:        http://localhost:3000
+      NEXT_PUBLIC_WHATSAPP_NUMBER: ${NEXT_PUBLIC_WHATSAPP_NUMBER}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - yalahaji-net
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  # ── Next.js Admin :3001 ───────────────────────────────────────────────────────
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.admin
+    container_name: yalahaji-admin
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV:                    production
+      PORT:                        3001
+      NEXT_PUBLIC_ADMIN_API_URL:   http://localhost:4000/api/v1
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - yalahaji-net
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

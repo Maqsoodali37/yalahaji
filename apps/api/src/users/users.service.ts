@@ -1,0 +1,107 @@
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common'
+import { PrismaService } from '../prisma/prisma.service'
+import { UpdateProfileDto } from './dto/update-profile.dto'
+import { CreateAddressDto } from './dto/create-address.dto'
+import { Prisma } from '@prisma/client'
+
+@Injectable()
+export class UsersService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async findById(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, name: true, email: true, phone: true, role: true, loyaltyPoints: true, createdAt: true },
+    })
+    if (!user) throw new NotFoundException('User not found.')
+    return user
+  }
+
+  async updateProfile(id: string, dto: UpdateProfileDto) {
+    if (dto.email) {
+      const existing = await this.prisma.user.findFirst({ where: { email: dto.email, NOT: { id } } })
+      if (existing) throw new ConflictException('Email already in use.')
+    }
+    return this.prisma.user.update({
+      where: { id },
+      data: dto,
+      select: { id: true, name: true, email: true, phone: true, role: true, loyaltyPoints: true },
+    })
+  }
+
+  async getAddresses(userId: string) {
+    return this.prisma.address.findMany({ where: { userId }, orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }] })
+  }
+
+  async createAddress(userId: string, dto: CreateAddressDto) {
+    if (dto.isDefault) {
+      await this.prisma.address.updateMany({ where: { userId }, data: { isDefault: false } })
+    }
+    return this.prisma.address.create({
+      data: { ...dto, userId } as Prisma.AddressUncheckedCreateInput,
+    })
+  }
+
+  async updateAddress(id: string, userId: string, dto: Partial<CreateAddressDto>) {
+    const addr = await this.prisma.address.findFirst({ where: { id, userId } })
+    if (!addr) throw new NotFoundException('Address not found.')
+    if (dto.isDefault) {
+      await this.prisma.address.updateMany({ where: { userId }, data: { isDefault: false } })
+    }
+    return this.prisma.address.update({ where: { id }, data: dto })
+  }
+
+  async deleteAddress(id: string, userId: string) {
+    const addr = await this.prisma.address.findFirst({ where: { id, userId } })
+    if (!addr) throw new NotFoundException('Address not found.')
+    return this.prisma.address.delete({ where: { id } })
+  }
+
+  async getWishlist(userId: string) {
+    return this.prisma.wishlist.findMany({
+      where: { userId },
+      include: {
+        product: {
+          include: {
+            images: { where: { isPrimary: true }, take: 1 },
+            variants: { take: 1, orderBy: { price: 'asc' } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+  }
+
+  async addToWishlist(userId: string, productId: string) {
+    const product = await this.prisma.product.findUnique({ where: { id: productId } })
+    if (!product) throw new NotFoundException('Product not found.')
+    return this.prisma.wishlist.upsert({
+      where: { userId_productId: { userId, productId } },
+      update: {},
+      create: { userId, productId },
+    })
+  }
+
+  async removeFromWishlist(userId: string, productId: string) {
+    return this.prisma.wishlist.delete({ where: { userId_productId: { userId, productId } } })
+  }
+
+  // Admin
+  async findAll(page = 1, limit = 20) {
+    const [items, total] = await Promise.all([
+      this.prisma.user.findMany({
+        select: { id: true, name: true, email: true, phone: true, role: true, loyaltyPoints: true, isActive: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit, take: limit,
+      }),
+      this.prisma.user.count(),
+    ])
+    return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } }
+  }
+
+  async toggleActive(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } })
+    if (!user) throw new NotFoundException('User not found.')
+    return this.prisma.user.update({ where: { id }, data: { isActive: !user.isActive } })
+  }
+}

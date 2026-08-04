@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yala Haji — Hajj &amp; Umrah Essentials</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --white:#FFFFFF;
+  --paper:#FAFAF8;
+  --mist:#F0F3F1;
+  --line:#E2E7E4;
+  --ink:#133C2A;
+  --ink-2:#55635B;
+  --ink-3:#8B968F;
+  --gold:#BF9436;
+  --gold-2:#A67C28;
+  --gold-tint:#FAF4E7;
+  --green:#133C2A;
+  --green-2:#1D5C40;
+  --green-tint:#EDF3F0;
+  --red:#B5392F;
+  --r-sm:8px;
+  --r-md:14px;
+  --r-lg:22px;
+  --shadow-sm:0 1px 2px rgba(19,60,42,.05);
+  --shadow-md:0 6px 20px -8px rgba(19,60,42,.14);
+  --shadow-lg:0 24px 50px -30px rgba(19,60,42,.32);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;}
+body{
+  background:var(--white);
+  color:var(--ink);
+  font-family:'Plus Jakarta Sans',system-ui,sans-serif;
+  font-size:15px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none;}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
+img{display:block;max-width:100%;}
+ul{list-style:none;}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:3px;}
+.serif{font-family:'Instrument Serif',Georgia,serif;font-weight:400;}
+.wrap{max-width:1280px;margin:0 auto;padding:0 24px;}
+@media(max-width:880px){.wrap{padding-left:10px !important;padding-right:10px !important;}}
+.icon{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;}
+.icon-sm{width:16px;height:16px;}
+
+/* ============ ANNOUNCEMENT ============ */
+.announce{
+  background:var(--ink);color:#F3F1EC;
+  font-size:12.5px;font-weight:500;letter-spacing:.01em;
+  display:flex;align-items:center;justify-content:center;gap:26px;
+  height:38px;overflow:hidden;
+}
+.announce span{display:flex;align-items:center;gap:7px;white-space:nowrap;}
+.announce b{color:var(--gold);font-weight:700;}
+.announce .sep{width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.28);}
+@media(max-width:820px){.announce span:nth-child(n+3){display:none;}}
+
+/* ============ HEADER ============ */
+header{position:sticky;top:0;z-index:100;background:var(--white);}
+.head-main{
+  border-bottom:1px solid var(--line);
+}
+.head-row{
+  display:grid;grid-template-columns:auto 1fr auto;
+  align-items:center;gap:32px;height:76px;
+}
+.brand{display:block;flex-shrink:0;}
+.brand img{height:52px;width:auto;}
+footer .brand img{height:56px;}
+@media(max-width:880px){.brand img{height:40px;}}
+
+/* search */
+.search{
+  display:flex;align-items:center;gap:10px;
+  background:var(--mist);border:1px solid transparent;
+  border-radius:var(--r-lg);padding:0 18px;height:46px;
+  max-width:520px;width:100%;transition:.2s;
+}
+.search:focus-within{background:var(--white);border-color:var(--ink);box-shadow:var(--shadow-sm);}
+.search input{
+  border:none;background:none;outline:none;flex:1;
+  font-family:inherit;font-size:14px;color:var(--ink);
+}
+.search input::placeholder{color:var(--ink-3);}
+.search .go{
+  background:var(--ink);color:#fff;border-radius:50%;
+  width:32px;height:32px;display:grid;place-items:center;flex-shrink:0;
+  transition:.2s;
+}
+.search .go:hover{background:var(--gold-2);}
+
+.head-actions{display:flex;align-items:center;gap:6px;}
+.act{
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:8px 12px;border-radius:var(--r-sm);
+  font-size:10.5px;font-weight:600;color:var(--ink-2);
+  transition:.15s;position:relative;
+}
+.act:hover{background:var(--mist);color:var(--ink);}
+.act .badge{
+  position:absolute;top:2px;right:6px;
+  background:var(--gold);color:#fff;
+  font-size:9.5px;font-weight:800;line-height:1;
+  min-width:16px;height:16px;padding:0 4px;
+  border-radius:9px;display:grid;place-items:center;
+}
+.burger{display:none;}
+
+/* ============ NAV + MEGA MENU ============ */
+.nav-bar{border-bottom:1px solid var(--line);background:var(--white);}
+.nav-list{display:flex;align-items:center;gap:4px;height:52px;}
+.nav-item{position:relative;height:100%;display:flex;align-items:center;}
+.nav-link{
+  display:flex;align-items:center;gap:5px;
+  padding:0 15px;height:100%;
+  font-size:13.5px;font-weight:600;color:var(--ink-2);
+  border-bottom:2px solid transparent;transition:.15s;
+}
+.nav-item:hover .nav-link{color:var(--ink);border-bottom-color:var(--gold);}
+.nav-link .chev{transition:transform .2s;}
+.nav-item:hover .chev{transform:rotate(180deg);}
+.nav-link.hot{color:var(--red);}
+
+.mega{
+  position:absolute;top:100%;left:0;
+  background:var(--white);border:1px solid var(--line);
+  border-radius:0 0 var(--r-md) var(--r-md);
+  box-shadow:var(--shadow-lg);
+  padding:28px 30px;
+  display:grid;grid-template-columns:repeat(3,190px) 240px;gap:30px;
+  opacity:0;visibility:hidden;transform:translateY(8px);
+  transition:.2s ease;z-index:90;
+}
+.nav-item:hover .mega{opacity:1;visibility:visible;transform:translateY(0);}
+.mega h5{
+  font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:14px;
+}
+.mega li{margin-bottom:9px;}
+.mega li a{
+  font-size:13.5px;font-weight:500;color:var(--ink-2);
+  display:flex;align-items:center;gap:7px;transition:.15s;
+}
+.mega li a:hover{color:var(--gold-2);}
+.mega .tag{
+  font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;
+  padding:2px 6px;border-radius:4px;
+}
+.tag-new{background:var(--green-tint);color:var(--green);}
+.tag-sale{background:#FBEAE9;color:var(--red);}
+.mega-promo{
+  background:var(--gold-tint);border-radius:var(--r-md);
+  padding:18px;display:flex;flex-direction:column;
+}
+.mega-promo img{width:100%;height:120px;object-fit:contain;margin-bottom:12px;}
+.mega-promo strong{font-size:14px;display:block;margin-bottom:4px;}
+.mega-promo p{font-size:12px;color:var(--ink-2);margin-bottom:12px;}
+.mega-promo a{
+  font-size:12px;font-weight:700;color:var(--gold-2);
+  display:flex;align-items:center;gap:5px;margin-top:auto;
+}
+
+/* ============ HERO CAROUSEL ============ */
+.hero{padding:26px 0 0;}
+.carousel{
+  position:relative;border-radius:var(--r-lg);overflow:hidden;
+  background:var(--paper);border:1px solid var(--line);
+}
+.slides{position:relative;min-height:400px;}
+.slide{
+  position:absolute;inset:0;
+  display:grid;grid-template-columns:1fr .85fr;align-items:center;
+  gap:20px;padding:44px 56px;
+  opacity:0;visibility:hidden;transition:opacity .45s ease;
+}
+.slide.on{opacity:1;visibility:visible;}
+.slide.bg-gold{background:linear-gradient(105deg,var(--gold-tint) 0%,var(--paper) 62%);}
+.slide.bg-green{background:linear-gradient(105deg,var(--green-tint) 0%,var(--paper) 62%);}
+.slide.bg-mist{background:linear-gradient(105deg,var(--mist) 0%,var(--paper) 62%);}
+.chip{
+  display:inline-flex;align-items:center;gap:7px;
+  background:var(--white);border:1px solid var(--line);
+  padding:7px 14px;border-radius:20px;
+  font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  box-shadow:var(--shadow-sm);margin-bottom:18px;
+}
+.chip .dot{width:6px;height:6px;border-radius:50%;background:var(--red);animation:pulse 1.8s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+.slide h1{
+  font-family:'Instrument Serif',serif;font-weight:400;
+  font-size:52px;line-height:1.04;letter-spacing:-1px;
+  margin-bottom:14px;max-width:520px;
+}
+.slide h1 i{color:var(--gold-2);}
+.slide p{font-size:15px;color:var(--ink-2);max-width:420px;margin-bottom:26px;}
+.slide-cta{display:flex;align-items:center;gap:20px;flex-wrap:wrap;}
+.btn{
+  display:inline-flex;align-items:center;gap:9px;
+  padding:14px 26px;border-radius:var(--r-lg);
+  font-size:14px;font-weight:700;transition:.2s;
+}
+.btn-dark{background:var(--ink);color:var(--white);}
+.btn-dark:hover{background:var(--gold-2);transform:translateY(-2px);box-shadow:var(--shadow-md);}
+.btn-line{border:1.5px solid var(--line);background:var(--white);color:var(--ink);}
+.btn-line:hover{border-color:var(--ink);}
+.price-tag{display:flex;flex-direction:column;gap:1px;}
+.price-tag .lbl{font-size:11px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em;}
+.price-tag .val{font-size:22px;font-weight:800;color:var(--ink);letter-spacing:-.5px;}
+.price-tag .val s{font-size:14px;font-weight:500;color:var(--ink-3);margin-right:7px;}
+.slide-img{display:grid;place-items:center;height:100%;}
+.slide-img img{max-height:300px;width:auto;filter:drop-shadow(0 24px 30px rgba(19,60,42,.16));}
+
+.c-arrow{
+  position:absolute;top:50%;transform:translateY(-50%);z-index:6;
+  width:42px;height:42px;border-radius:50%;
+  background:var(--white);box-shadow:var(--shadow-md);
+  display:grid;place-items:center;color:var(--ink);transition:.2s;
+}
+.c-arrow:hover{background:var(--ink);color:var(--white);}
+.c-arrow.p{left:18px;} .c-arrow.n{right:18px;}
+.c-dots{position:absolute;bottom:22px;left:56px;display:flex;gap:7px;z-index:6;}
+.c-dots button{width:7px;height:7px;border-radius:4px;background:rgba(19,60,42,.2);transition:.3s;}
+.c-dots button.on{width:26px;background:var(--gold);}
+
+/* ============ USP STRIP ============ */
+.usp{
+  display:grid;grid-template-columns:repeat(4,1fr);
+  gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:var(--r-md);
+  overflow:hidden;margin:26px 0 0;
+}
+.usp div{
+  background:var(--white);padding:22px 20px;
+  display:flex;align-items:center;gap:14px;
+}
+.usp .ic{
+  width:40px;height:40px;border-radius:50%;flex-shrink:0;
+  background:var(--gold-tint);color:var(--gold-2);
+  display:grid;place-items:center;
+}
+.usp strong{display:block;font-size:13.5px;font-weight:700;}
+.usp small{font-size:11.5px;color:var(--ink-3);}
+
+/* ============ SECTION ============ */
+section.blk{padding-top:64px;padding-bottom:64px;}
+.blk-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:30px;gap:20px;}
+.blk-head .eyebrow{
+  font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--gold-2);margin-bottom:9px;display:block;
+}
+.blk-head h2{font-family:'Instrument Serif',serif;font-weight:400;font-size:34px;letter-spacing:-.5px;}
+.blk-head p{font-size:14px;color:var(--ink-2);margin-top:6px;}
+.more{
+  display:inline-flex;align-items:center;gap:7px;flex-shrink:0;
+  font-size:13px;font-weight:700;color:var(--ink);
+  padding:10px 18px;border:1.5px solid var(--line);border-radius:var(--r-lg);transition:.2s;
+}
+.more:hover{border-color:var(--green-2);background:linear-gradient(135deg,var(--green-2),var(--ink));color:var(--white);box-shadow:0 4px 14px rgba(15,107,60,.25);}
+
+/* ============ CATEGORIES ============ */
+.cats{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;}
+.cat{
+  background:var(--white);border:1.5px solid var(--line);border-radius:var(--r-md);
+  padding:26px 20px 22px;text-align:center;transition:.25s;position:relative;overflow:hidden;
+}
+.cat:hover{transform:translateY(-5px);box-shadow:0 8px 28px -8px rgba(15,107,60,.2);border-color:var(--green-2);}
+.cat img{width:142px;height:142px;object-fit:contain;margin:0 auto 14px;transition:.3s;}
+.cat:hover img{transform:scale(1.06);}
+.cat h3{font-size:15.5px;font-weight:700;margin-bottom:4px;}
+.cat span{font-size:12px;color:var(--ink-3);}
+.cat .cnt{
+  position:absolute;top:14px;right:14px;
+  background:var(--white);border:1px solid var(--line);
+  font-size:10.5px;font-weight:700;color:var(--ink-2);
+  padding:3px 9px;border-radius:12px;
+}
+
+/* ============ FILTER PILLS ============ */
+.pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:26px;}
+.pill{
+  padding:9px 17px;border-radius:20px;border:1.5px solid var(--line);
+  font-size:12.5px;font-weight:600;color:var(--ink-2);transition:.18s;background:var(--white);
+}
+.pill:hover{border-color:var(--ink-3);color:var(--ink);}
+.pill.on{background:linear-gradient(135deg,var(--green-2),var(--ink));border-color:var(--green-2);color:var(--white);box-shadow:0 2px 10px rgba(15,107,60,.25);}
+
+/* ============ PRODUCTS ============ */
+.prods{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;}
+.card{
+  background:var(--white);border:1px solid var(--line);border-radius:var(--r-md);
+  overflow:hidden;transition:.25s;position:relative;
+}
+.card:hover{box-shadow:0 10px 32px -8px rgba(15,107,60,.18);border-color:var(--green-2);transform:translateY(-4px);}
+.card-img{position:relative;aspect-ratio:1/1;background:var(--paper);overflow:hidden;}
+.card-img img{width:100%;height:100%;object-fit:contain;padding:12px;transition:.35s;}
+.card:hover .card-img img{transform:scale(1.05);}
+.flags{position:absolute;top:12px;left:12px;display:flex;flex-direction:column;gap:5px;z-index:2;}
+.flag{
+  font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+  padding:4px 9px;border-radius:5px;color:#fff;
+}
+.f-eco{background:var(--ink-3);}
+.f-std{background:var(--green);}
+.f-prm{background:var(--gold-2);}
+.f-off{background:var(--red);}
+.wish{
+  position:absolute;top:12px;right:12px;z-index:2;
+  width:34px;height:34px;border-radius:50%;background:var(--white);
+  box-shadow:var(--shadow-sm);display:grid;place-items:center;
+  color:var(--ink-2);transition:.2s;
+}
+.wish:hover{color:var(--red);transform:scale(1.1);}
+.quick{
+  position:absolute;left:12px;right:12px;bottom:12px;z-index:2;
+  background:linear-gradient(135deg,var(--green-2),var(--ink));color:var(--white);
+  padding:11px;border-radius:var(--r-sm);
+  font-size:12.5px;font-weight:700;text-align:center;
+  opacity:0;transform:translateY(8px);transition:.25s;
+  box-shadow:0 4px 14px rgba(15,107,60,.3);
+}
+.card:hover .quick{opacity:1;transform:translateY(0);}
+.card-body{padding:16px 16px 18px;}
+.card-cat{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:7px;}
+.card-body h4{font-size:14px;font-weight:600;line-height:1.4;margin-bottom:9px;min-height:39px;}
+.rate{display:flex;align-items:center;gap:6px;margin-bottom:11px;}
+.stars{color:var(--gold);font-size:12px;letter-spacing:1.5px;}
+.rate small{font-size:11.5px;color:var(--ink-3);}
+.card-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.pr{display:flex;align-items:baseline;gap:7px;}
+.pr b{font-size:16px;font-weight:800;letter-spacing:-.3px;}
+.pr s{font-size:12.5px;color:var(--ink-3);font-weight:500;}
+.add{
+  width:36px;height:36px;border-radius:var(--r-sm);flex-shrink:0;
+  background:var(--green-tint);color:var(--green-2);display:grid;place-items:center;transition:.2s;
+  border:1.5px solid var(--line);
+}
+.add:hover{background:linear-gradient(135deg,var(--green-2),var(--ink));color:var(--white);border-color:transparent;box-shadow:0 3px 10px rgba(15,107,60,.25);}
+
+/* ============ SPLIT BANNERS ============ */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.sb{
+  border-radius:var(--r-md);padding:32px 34px;
+  display:flex;align-items:center;justify-content:space-between;gap:20px;
+  min-height:180px;border:1px solid var(--line);
+}
+.sb.g{background:linear-gradient(120deg,#FFF3CC 0%,#FFFBF0 100%);border-color:#F0D580;}
+.sb.v{background:linear-gradient(120deg,#C8F0DA 0%,#EDF9F3 100%);border-color:#A3D9BB;}
+.sb .chip{margin-bottom:12px;}
+.sb h3{font-family:'Instrument Serif',serif;font-weight:400;font-size:27px;line-height:1.15;margin-bottom:7px;}
+.sb p{font-size:13px;color:var(--ink-2);margin-bottom:16px;}
+.sb a.lnk{font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:6px;color:var(--ink);}
+.sb a.lnk:hover{color:var(--gold-2);gap:10px;}
+.sb img{height:140px;width:auto;object-fit:contain;flex-shrink:0;}
+
+/* ============ REVIEWS ============ */
+.revs{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
+.rev{
+  background:var(--paper);border:1px solid var(--line);
+  border-radius:var(--r-md);padding:26px;
+}
+.rev .stars{font-size:13px;margin-bottom:12px;display:block;}
+.rev q{
+  font-family:'Instrument Serif',serif;font-size:18px;line-height:1.45;
+  display:block;margin-bottom:18px;quotes:none;
+}
+.rev-who{display:flex;align-items:center;gap:11px;}
+.av{
+  width:38px;height:38px;border-radius:50%;background:var(--gold-tint);
+  color:var(--gold-2);display:grid;place-items:center;
+  font-size:14px;font-weight:800;flex-shrink:0;
+}
+.rev-who strong{font-size:13px;display:block;}
+.rev-who small{font-size:11.5px;color:var(--ink-3);display:flex;align-items:center;gap:4px;}
+
+/* ============ FEATURES RING ============ */
+.feat-ring-section{
+  background:var(--paper);border:1px solid var(--line);
+  border-radius:var(--r-lg);padding:52px 48px;
+  overflow:hidden;
+}
+.feat-ring-head{text-align:center;margin-bottom:48px;}
+.feat-ring-head .eyebrow{
+  font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--gold-2);margin-bottom:8px;
+}
+.feat-ring-head h2{font-size:34px;line-height:1.15;letter-spacing:-.5px;}
+.feat-ring-body{
+  display:grid;grid-template-columns:1fr auto 1fr;
+  align-items:center;gap:36px;
+}
+.feat-col{display:flex;flex-direction:column;gap:28px;}
+.feat-col.right .feat-item{flex-direction:row-reverse;text-align:right;}
+.feat-item{display:flex;align-items:flex-start;gap:16px;}
+.feat-item-icon{
+  flex-shrink:0;width:52px;height:52px;border-radius:var(--r-sm);
+  background:var(--white);border:1px solid var(--line);
+  display:grid;place-items:center;color:var(--green);
+  box-shadow:var(--shadow-sm);
+}
+.feat-item-icon svg{width:22px;height:22px;}
+.feat-item h4{font-size:14.5px;font-weight:700;color:var(--ink);margin-bottom:5px;}
+.feat-item p{font-size:13px;color:var(--ink-2);line-height:1.55;}
+.feat-center{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  width:260px;flex-shrink:0;
+}
+.feat-center-ring{
+  width:220px;height:220px;border-radius:50%;
+  border:2px solid var(--line);
+  background:radial-gradient(circle at 50% 40%, var(--green-tint) 0%, var(--paper) 70%);
+  display:grid;place-items:center;
+  box-shadow:0 0 0 12px var(--white),0 0 0 14px var(--line);
+  position:relative;
+}
+.feat-center-ring img{width:130px;height:130px;object-fit:contain;filter:drop-shadow(0 8px 16px rgba(19,60,42,.18));}
+.feat-center-label{
+  margin-top:28px;text-align:center;
+  font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);
+}
+@media(max-width:980px){
+  .feat-ring-body{grid-template-columns:1fr;gap:40px;}
+  .feat-col.right .feat-item{flex-direction:row;text-align:left;}
+  .feat-center{width:100%;align-items:center;}
+  .feat-center-ring{width:180px;height:180px;}
+}
+
+.why-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:32px;
+}
+.why-card{display:flex;flex-direction:column;gap:12px;}
+.why-icon{
+  width:48px;height:48px;border-radius:var(--r-sm);
+  background:var(--green-tint);border:1px solid var(--line);
+  display:grid;place-items:center;color:var(--green);flex-shrink:0;
+}
+.why-icon svg{width:22px;height:22px;}
+.why-card h4{font-size:15px;font-weight:700;color:var(--ink);}
+.why-card p{font-size:13.5px;color:var(--ink-2);line-height:1.6;}
+@media(max-width:900px){.why-grid{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:540px){.why-grid{grid-template-columns:1fr;}}
+
+
+/* ============ FOOTER ============ */
+footer{background:var(--paper);border-top:1px solid var(--line);margin-top:64px;}
+.f-top{display:grid;grid-template-columns:1.6fr repeat(3,1fr) 1.1fr;gap:36px;padding:56px 0 40px;}
+.f-top .brand{margin-bottom:14px;}
+.f-about{font-size:13px;color:var(--ink-2);max-width:250px;margin-bottom:18px;}
+.socials{display:flex;gap:9px;}
+.socials a{
+  width:34px;height:34px;border-radius:50%;border:1px solid var(--line);
+  display:grid;place-items:center;color:var(--ink-2);background:var(--white);transition:.2s;
+}
+.socials a:hover{background:var(--ink);color:#fff;border-color:var(--ink);}
+.f-top h5{font-size:11px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);margin-bottom:15px;}
+.f-top li{margin-bottom:10px;}
+.f-top li a{font-size:13.5px;color:var(--ink-2);transition:.15s;}
+.f-top li a:hover{color:var(--gold-2);}
+.f-contact p{font-size:13px;color:var(--ink-2);display:flex;gap:9px;margin-bottom:11px;align-items:flex-start;}
+.f-contact svg{flex-shrink:0;margin-top:2px;color:var(--gold-2);}
+.pay{display:flex;gap:7px;flex-wrap:wrap;margin-top:16px;}
+.pay span{
+  background:var(--white);border:1px solid var(--line);border-radius:5px;
+  padding:5px 9px;font-size:10px;font-weight:700;color:var(--ink-2);
+}
+.f-bot{
+  border-top:1px solid var(--line);padding:20px 0;
+  display:flex;justify-content:space-between;align-items:center;
+  font-size:12.5px;color:var(--ink-3);gap:16px;flex-wrap:wrap;
+}
+.f-bot a{color:var(--ink-3);}
+.f-bot a:hover{color:var(--ink);}
+
+/* ============ WHATSAPP FAB ============ */
+.fab{
+  position:fixed;right:22px;bottom:22px;z-index:200;
+  display:flex;align-items:center;gap:10px;
+  background:#25D366;color:#fff;
+  padding:13px 20px;border-radius:30px;
+  font-size:13.5px;font-weight:700;
+  box-shadow:0 10px 26px -8px rgba(37,211,102,.6);transition:.2s;
+}
+.fab:hover{transform:translateY(-3px);}
+
+
+/* ===== PREDICTIVE SEARCH (Dawn/Turbo pattern) ===== */
+.search{position:relative;}
+.sug{
+  position:absolute;top:calc(100% + 10px);left:0;right:0;
+  background:var(--white);border:1px solid var(--line);
+  border-radius:var(--r-md);box-shadow:var(--shadow-lg);
+  padding:16px;z-index:120;display:none;
+}
+.search.open .sug{display:block;}
+.sug h6{font-size:10px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px;}
+.sug .terms{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px;}
+.sug .terms a{
+  font-size:12px;font-weight:600;padding:6px 12px;border-radius:16px;
+  background:var(--mist);color:var(--ink-2);
+}
+.sug .terms a:hover{background:var(--ink);color:#fff;}
+.sug-row{display:flex;align-items:center;gap:12px;padding:9px 8px;border-radius:var(--r-sm);}
+.sug-row:hover{background:var(--mist);}
+.sug-row img{width:44px;height:44px;object-fit:contain;background:var(--paper);border-radius:6px;flex-shrink:0;}
+.sug-row .t{flex:1;font-size:13px;font-weight:600;}
+.sug-row .t small{display:block;font-size:11px;font-weight:500;color:var(--ink-3);}
+.sug-row b{font-size:13.5px;}
+
+/* ===== CART DRAWER (Prestige/Impulse pattern) ===== */
+.scrim{
+  position:fixed;inset:0;background:rgba(19,60,42,.4);
+  backdrop-filter:blur(2px);z-index:300;opacity:0;visibility:hidden;transition:.3s;
+}
+.scrim.on{opacity:1;visibility:visible;}
+.drawer{
+  position:fixed;top:0;right:0;bottom:0;width:400px;max-width:88vw;
+  background:var(--white);z-index:310;
+  transform:translateX(100%);transition:transform .32s cubic-bezier(.4,0,.2,1);
+  display:flex;flex-direction:column;
+}
+.drawer.on{transform:translateX(0);}
+.dr-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:20px 22px;border-bottom:1px solid var(--line);
+}
+.dr-head h4{font-size:16px;font-weight:700;}
+.dr-head span{font-size:12px;color:var(--ink-3);font-weight:600;}
+.dr-x{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:var(--ink-2);}
+.dr-x:hover{background:var(--mist);color:var(--ink);}
+.ship-bar{padding:16px 22px;border-bottom:1px solid var(--line);background:var(--green-tint);}
+.ship-bar p{font-size:12.5px;font-weight:600;margin-bottom:9px;}
+.ship-bar p b{color:var(--green);}
+.bar{height:6px;border-radius:4px;background:rgba(19,60,42,.12);overflow:hidden;}
+.bar i{display:block;height:100%;width:62%;background:var(--gold);border-radius:4px;}
+.dr-body{flex:1;overflow-y:auto;padding:8px 22px;}
+.ci{display:flex;gap:13px;padding:16px 0;border-bottom:1px solid var(--line);}
+.ci img{width:70px;height:70px;object-fit:contain;background:var(--paper);border-radius:var(--r-sm);flex-shrink:0;}
+.ci-i{flex:1;min-width:0;}
+.ci-i h5{font-size:13px;font-weight:600;line-height:1.35;margin-bottom:3px;}
+.ci-i .var{font-size:11.5px;color:var(--ink-3);margin-bottom:9px;}
+.qty{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:16px;overflow:hidden;}
+.qty button{width:26px;height:26px;display:grid;place-items:center;color:var(--ink-2);font-size:14px;}
+.qty button:hover{background:var(--mist);color:var(--ink);}
+.qty span{font-size:12.5px;font-weight:700;width:26px;text-align:center;}
+.ci-p{text-align:right;font-size:13.5px;font-weight:800;flex-shrink:0;}
+.ci-p s{display:block;font-size:11px;font-weight:500;color:var(--ink-3);}
+.dr-foot{border-top:1px solid var(--line);padding:20px 22px;background:var(--paper);}
+.tot{display:flex;justify-content:space-between;font-size:13px;color:var(--ink-2);margin-bottom:8px;}
+.tot.big{font-size:17px;font-weight:800;color:var(--ink);margin:12px 0 16px;padding-top:12px;border-top:1px solid var(--line);}
+.dr-foot .btn{width:100%;justify-content:center;}
+.dr-note{text-align:center;font-size:11.5px;color:var(--ink-3);margin-top:11px;}
+
+/* ===== COLOUR SWATCHES ===== */
+.sw{display:flex;gap:6px;margin-bottom:11px;}
+.sw i{
+  width:17px;height:17px;border-radius:50%;
+  border:1.5px solid var(--white);box-shadow:0 0 0 1px var(--line);
+  cursor:pointer;transition:.15s;
+}
+.sw i:hover,.sw i.on{box-shadow:0 0 0 2px var(--ink);}
+.sw .more-c{font-size:11px;color:var(--ink-3);font-weight:600;align-self:center;margin-left:2px;}
+
+/* ===== STICKY MOBILE BAR ===== */
+.mbar{display:none;}
+@media(max-width:880px){
+  .mbar{
+    display:grid;grid-template-columns:repeat(4,1fr);
+    position:fixed;left:0;right:0;bottom:0;z-index:200;
+    background:var(--white);border-top:1px solid var(--line);
+    padding:8px 0 calc(8px + env(safe-area-inset-bottom));
+  }
+  .mbar a{
+    display:flex;flex-direction:column;align-items:center;gap:3px;
+    font-size:10px;font-weight:700;color:var(--ink-2);position:relative;
+  }
+  .mbar a.on{color:var(--green);}
+  .mbar .badge{
+    position:absolute;top:-3px;right:calc(50% - 18px);
+    background:var(--gold);color:#fff;font-size:9px;font-weight:800;
+    min-width:15px;height:15px;border-radius:8px;display:grid;place-items:center;padding:0 4px;
+  }
+  .fab{bottom:78px;}
+  footer{margin-bottom:64px;}
+}
+
+/* ============ RESPONSIVE ============ */
+@media(max-width:1080px){
+  .cats,.prods{grid-template-columns:repeat(3,1fr);}
+  .f-top{grid-template-columns:1fr 1fr 1fr;}
+}
+@media(max-width:880px){
+  .head-row{grid-template-columns:auto auto;height:64px;}
+  .search{display:none;}
+  .burger{display:grid;place-items:center;padding:8px;}
+  .nav-bar{display:none;}
+  .slides{min-height:auto;}
+  .slide{position:relative;grid-template-columns:1fr;text-align:center;padding:32px 14px 46px;}
+  .slide:not(.on){display:none;}
+  .slide h1{font-size:33px;margin-inline:auto;}
+  .slide p{margin-inline:auto;}
+  .slide-cta{justify-content:center;}
+  .slide-img{order:-1;}
+  .slide-img img{max-height:170px;}
+  .c-arrow{display:none;}
+  .c-dots{left:0;right:0;justify-content:center;}
+  .usp{grid-template-columns:1fr 1fr;}
+  .cats,.prods,.revs{grid-template-columns:1fr 1fr;}
+  .split{grid-template-columns:1fr;}
+  .f-top{grid-template-columns:1fr 1fr;}
+  .blk-head h2{font-size:26px;}
+  section.blk{padding-top:44px;padding-bottom:44px;}
+}
+@media(max-width:560px){
+  .cats,.prods,.revs{grid-template-columns:1fr;}
+  .sb{flex-direction:column;text-align:center;}
+  .fab span{display:none;}
+  .fab{padding:15px;border-radius:50%;}
+}
+</style>
+</head>
+<body>
+
+<!-- ANNOUNCEMENT -->
+<div class="announce">
+  <span>🚚 Free shipping over <b>₨5,000</b></span>
+  <i class="sep"></i>
+  <span>✅ Check first, then pay — COD</span>
+  <i class="sep"></i>
+  <span>↺ 7-day easy returns</span>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="head-main">
+    <div class="wrap head-row">
+      <a href="#" class="brand"><img src="assets/logo.png" alt="Yala Haji" height="52"></a>
+      <form class="search" onsubmit="return false;">
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input type="search" placeholder="Search ihram, abaya, attar, tasbeeh…">
+        <button class="go" aria-label="Search"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+        <div class="sug">
+          <h6>Trending searches</h6>
+          <div class="terms"><a href="#">Ihram</a><a href="#">Umrah kit</a><a href="#">Abaya</a><a href="#">Attar</a><a href="#">Tasbeeh</a><a href="#">Janamaz</a></div>
+          <h6>Products</h6>
+          <a href="#" class="sug-row"><img src="assets/umrah-kit.png" alt=""><span class="t">Complete Umrah Travel Kit<small>Hajj &amp; Umrah Kits · Premium</small></span><b>₨7,499</b></a>
+          <a href="#" class="sug-row"><img src="assets/abaya.png" alt=""><span class="t">Flowing Crepe Abaya<small>Abaya &amp; Hijab · Standard</small></span><b>₨4,250</b></a>
+          <a href="#" class="sug-row"><img src="assets/fragrances.png" alt=""><span class="t">Oud Al-Haramain Attar 12ml<small>Fragrances · Premium</small></span><b>₨1,899</b></a>
+        </div>
+      </form>
+      <div class="head-actions">
+        <a href="#" class="act">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Account
+        </a>
+        <a href="#" class="act">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l1.1 1L12 21.2l7.7-7.8 1.1-1a5.5 5.5 0 000-7.8z"/></svg>
+          Wishlist<span class="badge">3</span>
+        </a>
+        <button class="act" id="openCart">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18M16 10a4 4 0 01-8 0"/></svg>
+          Cart<span class="badge">2</span>
+        </button>
+        <button class="burger act" aria-label="Menu">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- NAV WITH MEGA MENU -->
+  <nav class="nav-bar">
+    <div class="wrap">
+      <ul class="nav-list">
+        <li class="nav-item">
+          <a href="#" class="nav-link">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+            All Categories
+            <svg class="icon icon-sm chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+          </a>
+          <div class="mega">
+            <div>
+              <h5>Ihram &amp; Kits</h5>
+              <ul>
+                <li><a href="#">Complete Umrah Kits</a></li>
+                <li><a href="#">Complete Hajj Kits</a></li>
+                <li><a href="#">Ihram for Men</a></li>
+                <li><a href="#">Ihram for Women</a></li>
+                <li><a href="#">Ihram for Kids</a></li>
+                <li><a href="#">Ihram Belts</a></li>
+                <li><a href="#">Build Your Own Kit <span class="tag tag-new">New</span></a></li>
+              </ul>
+            </div>
+            <div>
+              <h5>Modest Wear</h5>
+              <ul>
+                <li><a href="#">Abaya</a></li>
+                <li><a href="#">Hijab &amp; Scarves</a></li>
+                <li><a href="#">Hijab Caps</a></li>
+                <li><a href="#">Prayer Chadar</a></li>
+                <li><a href="#">Thobe &amp; Jubba</a></li>
+                <li><a href="#">Ghutra &amp; Shemagh</a></li>
+                <li><a href="#">Prayer Caps</a></li>
+              </ul>
+            </div>
+            <div>
+              <h5>Essentials</h5>
+              <ul>
+                <li><a href="#">Attar &amp; Oud</a></li>
+                <li><a href="#">Tasbeeh</a></li>
+                <li><a href="#">Janamaz</a></li>
+                <li><a href="#">Travel Accessories</a></li>
+                <li><a href="#">Toiletries Kit</a></li>
+                <li><a href="#">Footwear</a></li>
+                <li><a href="#">Dates &amp; Zamzam</a></li>
+              </ul>
+            </div>
+            <div class="mega-promo">
+              <img src="assets/umrah-kit.png" alt="Premium Umrah Kit">
+              <strong>Premium Umrah Kit</strong>
+              <p>9 essentials in one box — save 25%</p>
+              <a href="#">Shop now <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+            </div>
+          </div>
+        </li>
+
+        <li class="nav-item">
+          <a href="#" class="nav-link">Hajj &amp; Umrah Kits <svg class="icon icon-sm chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></a>
+          <div class="mega">
+            <div>
+              <h5>By Tier</h5>
+              <ul>
+                <li><a href="#">Economy Kits</a></li>
+                <li><a href="#">Standard Kits</a></li>
+                <li><a href="#">Premium Kits</a></li>
+              </ul>
+            </div>
+            <div>
+              <h5>By Pilgrim</h5>
+              <ul>
+                <li><a href="#">For Men</a></li>
+                <li><a href="#">For Women</a></li>
+                <li><a href="#">For Kids</a></li>
+                <li><a href="#">For Seniors</a></li>
+                <li><a href="#">Family Bundles <span class="tag tag-sale">Sale</span></a></li>
+              </ul>
+            </div>
+            <div>
+              <h5>Kit Add-ons</h5>
+              <ul>
+                <li><a href="#">Travel Bags</a></li>
+                <li><a href="#">Money Pouches</a></li>
+                <li><a href="#">Slippers</a></li>
+                <li><a href="#">Umbrellas</a></li>
+                <li><a href="#">Hygiene Packs</a></li>
+              </ul>
+            </div>
+            <div class="mega-promo">
+              <img src="assets/tabaruk.png" alt="Gift box">
+              <strong>Gift a Kit</strong>
+              <p>Free gift wrap &amp; message card</p>
+              <a href="#">Explore gifting <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+            </div>
+          </div>
+        </li>
+
+        <li class="nav-item"><a href="#" class="nav-link">Abaya &amp; Hijab</a></li>
+        <li class="nav-item"><a href="#" class="nav-link">Fragrances</a></li>
+        <li class="nav-item"><a href="#" class="nav-link">Tabaruk &amp; Gifts</a></li>
+        <li class="nav-item"><a href="#" class="nav-link">Prayer Accessories</a></li>
+        <li class="nav-item"><a href="#" class="nav-link hot">Sale</a></li>
+        <li class="nav-item" style="margin-left:auto;"><a href="#" class="nav-link">Track Order</a></li>
+      </ul>
+    </div>
+  </nav>
+</header>
+
+<!-- HERO -->
+<div class="hero wrap">
+  <div class="carousel" id="car">
+    <div class="slides">
+      <div class="slide on bg-gold">
+        <div>
+          <span class="chip"><i class="dot"></i> Hajj Season 2026</span>
+          <h1>Prepare early,<br>save up to <i>25%</i></h1>
+          <p>Complete Ihram sets, travel bags and prayer essentials — bundled and ready before the rush.</p>
+          <div class="slide-cta">
+            <a href="#" class="btn btn-dark">Shop Hajj Kits <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+            <div class="price-tag"><span class="lbl">Premium kit from</span><span class="val"><s>₨9,999</s>₨7,499</span></div>
+          </div>
+        </div>
+        <div class="slide-img"><img src="assets/umrah-kit.png" alt="Hajj &amp; Umrah Kit"></div>
+      </div>
+
+      <div class="slide bg-green">
+        <div>
+          <span class="chip"><i class="dot"></i> Ramadan Umrah</span>
+          <h1>New <i>abaya</i> arrivals,<br>free hijab cap</h1>
+          <p>Breathable, modest and travel-ready. Every abaya this month ships with a complimentary hijab cap.</p>
+          <div class="slide-cta">
+            <a href="#" class="btn btn-dark">Shop Abaya &amp; Hijab <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+            <div class="price-tag"><span class="lbl">Starting at</span><span class="val">₨3,250</span></div>
+          </div>
+        </div>
+        <div class="slide-img"><img src="assets/abaya.png" alt="Abaya &amp; Hijab"></div>
+      </div>
+
+      <div class="slide bg-mist">
+        <div>
+          <span class="chip"><i class="dot"></i> After-Return Gifts</span>
+          <h1>Tabaruk from<br><i>the holy lands</i></h1>
+          <p>Dates, attars and blessed keepsake boxes for loved ones back home. Gift wrap included free.</p>
+          <div class="slide-cta">
+            <a href="#" class="btn btn-dark">Shop Gifts <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+            <div class="price-tag"><span class="lbl">Gift boxes from</span><span class="val">₨499</span></div>
+          </div>
+        </div>
+        <div class="slide-img"><img src="assets/tabaruk.png" alt="Tabaruk &amp; Gifts"></div>
+      </div>
+    </div>
+    <button class="c-arrow p" aria-label="Previous"><svg class="icon" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <button class="c-arrow n" aria-label="Next"><svg class="icon" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
+    <div class="c-dots">
+      <button class="on" data-i="0" aria-label="Slide 1"></button>
+      <button data-i="1" aria-label="Slide 2"></button>
+      <button data-i="2" aria-label="Slide 3"></button>
+    </div>
+  </div>
+
+  <div class="usp">
+    <div>
+      <span class="ic"><svg class="icon" viewBox="0 0 24 24"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></span>
+      <div><strong>Free Shipping</strong><small>On orders over ₨5,000</small></div>
+    </div>
+    <div>
+      <span class="ic"><svg class="icon" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.7l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.7l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg></span>
+      <div><strong>Check First, Then Pay</strong><small>Open your parcel on delivery</small></div>
+    </div>
+    <div>
+      <span class="ic"><svg class="icon" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></span>
+      <div><strong>7-Day Returns</strong><small>No questions asked</small></div>
+    </div>
+    <div>
+      <span class="ic"><svg class="icon" viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.4 8.4 0 01-3.9-.9L3 21l1.9-5a8.4 8.4 0 01-.9-3.9 8.4 8.4 0 018.4-9 8.4 8.4 0 018.6 8.4z"/></svg></span>
+      <div><strong>WhatsApp Support</strong><small>Before &amp; during your journey</small></div>
+    </div>
+  </div>
+</div>
+
+<!-- CATEGORIES -->
+<section class="blk wrap">
+  <div class="blk-head">
+    <div>
+      <span class="eyebrow">Shop by category</span>
+      <h2>Everything your journey needs</h2>
+      <p>Available in Economy, Standard and Premium across every category.</p>
+    </div>
+    <a href="#" class="more">All categories <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+  </div>
+  <div class="cats">
+    <a href="#" class="cat">
+      <span class="cnt">48 items</span>
+      <img src="assets/umrah-kit.png" alt="Hajj &amp; Umrah Kits">
+      <h3>Hajj &amp; Umrah Kits</h3>
+      <span>Complete, ready-to-go sets</span>
+    </a>
+    <a href="#" class="cat">
+      <span class="cnt">126 items</span>
+      <img src="assets/abaya.png" alt="Abaya &amp; Hijab">
+      <h3>Abaya &amp; Hijab</h3>
+      <span>Modest wear for every day</span>
+    </a>
+    <a href="#" class="cat">
+      <span class="cnt">64 items</span>
+      <img src="assets/fragrances.png" alt="Fragrances">
+      <h3>Fragrances</h3>
+      <span>Alcohol-free attar &amp; oud</span>
+    </a>
+    <a href="#" class="cat">
+      <span class="cnt">37 items</span>
+      <img src="assets/tabaruk.png" alt="Tabaruk &amp; Gifts">
+      <h3>Tabaruk &amp; Gifts</h3>
+      <span>Keepsakes from the holy lands</span>
+    </a>
+  </div>
+</section>
+
+<!-- PRODUCTS -->
+<section class="blk wrap" style="padding-top:0;">
+  <div class="blk-head">
+    <div>
+      <span class="eyebrow">Best sellers</span>
+      <h2>Loved by pilgrims this season</h2>
+    </div>
+    <a href="#" class="more">View all products <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+  </div>
+  <div class="pills">
+    <button class="pill on">All</button>
+    <button class="pill">Best sellers</button>
+    <button class="pill">New arrivals</button>
+    <button class="pill">On sale</button>
+    <button class="pill">Premium tier</button>
+    <button class="pill">Under ₨2,000</button>
+  </div>
+  <div class="prods">
+    <article class="card">
+      <div class="card-img">
+        <div class="flags"><span class="flag f-prm">Premium</span><span class="flag f-off">-25%</span></div>
+        <button class="wish" aria-label="Add to wishlist"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l1.1 1L12 21.2l7.7-7.8 1.1-1a5.5 5.5 0 000-7.8z"/></svg></button>
+        <img src="assets/umrah-kit.png" alt="Complete Umrah Travel Kit">
+        <div class="quick">Quick view</div>
+      </div>
+      <div class="card-body">
+        <div class="card-cat">Hajj &amp; Umrah Kits</div>
+        <h4>Complete Umrah Travel Kit — 9 Essentials</h4>
+        <div class="sw"><i class="on" style="background:#133C2A"></i><i style="background:#BF9436"></i><i style="background:#8B968F"></i><span class="more-c">3 tiers</span></div>
+        <div class="rate"><span class="stars">★★★★★</span><small>4.9 (214)</small></div>
+        <div class="card-foot">
+          <div class="pr"><b>₨7,499</b><s>₨9,999</s></div>
+          <button class="add" aria-label="Add to cart"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-img">
+        <div class="flags"><span class="flag f-std">Standard</span></div>
+        <button class="wish" aria-label="Add to wishlist"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l1.1 1L12 21.2l7.7-7.8 1.1-1a5.5 5.5 0 000-7.8z"/></svg></button>
+        <img src="assets/abaya.png" alt="Flowing Crepe Abaya">
+        <div class="quick">Quick view</div>
+      </div>
+      <div class="card-body">
+        <div class="card-cat">Abaya &amp; Hijab</div>
+        <h4>Flowing Crepe Abaya — Jet Black</h4>
+        <div class="sw"><i class="on" style="background:#1A1A1A"></i><i style="background:#4A4034"></i><i style="background:#5C6B63"></i><i style="background:#8B7B6B"></i><span class="more-c">+3</span></div>
+        <div class="rate"><span class="stars">★★★★☆</span><small>4.6 (98)</small></div>
+        <div class="card-foot">
+          <div class="pr"><b>₨4,250</b><s>₨5,200</s></div>
+          <button class="add" aria-label="Add to cart"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-img">
+        <div class="flags"><span class="flag f-prm">Premium</span></div>
+        <button class="wish" aria-label="Add to wishlist"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l1.1 1L12 21.2l7.7-7.8 1.1-1a5.5 5.5 0 000-7.8z"/></svg></button>
+        <img src="assets/fragrances.png" alt="Oud Al-Haramain Attar">
+        <div class="quick">Quick view</div>
+      </div>
+      <div class="card-body">
+        <div class="card-cat">Fragrances</div>
+        <h4>Oud Al-Haramain Alcohol-Free Attar 12ml</h4>
+        <div class="rate"><span class="stars">★★★★★</span><small>4.8 (341)</small></div>
+        <div class="card-foot">
+          <div class="pr"><b>₨1,899</b></div>
+          <button class="add" aria-label="Add to cart"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-img">
+        <div class="flags"><span class="flag f-eco">Economy</span></div>
+        <button class="wish" aria-label="Add to wishlist"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l1.1 1L12 21.2l7.7-7.8 1.1-1a5.5 5.5 0 000-7.8z"/></svg></button>
+        <img src="assets/tabaruk.png" alt="Tabaruk Keepsake Box">
+        <div class="quick">Quick view</div>
+      </div>
+      <div class="card-body">
+        <div class="card-cat">Tabaruk &amp; Gifts</div>
+        <h4>Zamzam &amp; Tasbeeh Keepsake Gift Box</h4>
+        <div class="rate"><span class="stars">★★★★★</span><small>4.9 (76)</small></div>
+        <div class="card-foot">
+          <div class="pr"><b>₨1,250</b></div>
+          <button class="add" aria-label="Add to cart"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+      </div>
+    </article>
+  </div>
+</section>
+
+<!-- SPLIT BANNERS -->
+<section class="blk wrap" style="padding-top:0;">
+  <div class="split">
+    <div class="sb g">
+      <div>
+        <span class="chip">Build your own</span>
+        <h3>Customise your kit</h3>
+        <p>Pick each item, choose your tier, we pack it.</p>
+        <a href="#" class="lnk">Start building <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      </div>
+      <img src="assets/umrah-kit.png" alt="Custom kit">
+    </div>
+    <div class="sb v">
+      <div>
+        <span class="chip">Flat 15% off</span>
+        <h3>Attar &amp; fragrances</h3>
+        <p>Alcohol-free, long-lasting, safe for Ihram.</p>
+        <a href="#" class="lnk">Shop fragrances <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      </div>
+      <img src="assets/fragrances.png" alt="Fragrances">
+    </div>
+  </div>
+</section>
+
+<!-- REVIEWS -->
+<!-- <section class="blk wrap" style="padding-top:0;">
+  <div class="blk-head">
+    <div>
+      <span class="eyebrow">4.8 out of 5 · 2,300+ reviews</span>
+      <h2>Trusted by pilgrims across Pakistan</h2>
+    </div>
+    <a href="#" class="more">Read all reviews <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+  </div>
+  <div class="revs">
+    <div class="rev">
+      <span class="stars">★★★★★</span>
+      <q>Ordered the Premium Umrah Kit for my father's trip and the quality exceeded expectations. Packaging was neat and delivery was on time.</q>
+      <div class="rev-who"><span class="av">A</span><div><strong>Ahmed R.</strong><small>✓ Verified purchase · Lahore</small></div></div>
+    </div>
+    <div class="rev">
+      <span class="stars">★★★★★</span>
+      <q>Bought an abaya and attar as a gift before my mother's Umrah. She loved both — the fit was perfect and the scent is subtle.</q>
+      <div class="rev-who"><span class="av">Y</span><div><strong>Ayesha K.</strong><small>✓ Verified purchase · Karachi</small></div></div>
+    </div>
+    <div class="rev">
+      <span class="stars">★★★★★</span>
+      <q>The kit had everything I needed, even things I hadn't thought of. Support answered every question on WhatsApp within minutes.</q>
+      <div class="rev-who"><span class="av">U</span><div><strong>Umar F.</strong><small>✓ Verified purchase · Islamabad</small></div></div>
+    </div>
+  </div>
+</section> -->
+
+<!-- FEATURES RING -->
+<section class="blk wrap" style="padding-top:0;">
+  <div class="feat-ring-section">
+    <div class="feat-ring-head">
+      <p class="eyebrow">Crafted for the conscious pilgrim</p>
+      <h2 class="serif">Your journey, our <i>commitment</i></h2>
+    </div>
+    <div class="feat-ring-body">
+
+      <!-- LEFT -->
+      <div class="feat-col left">
+        <div class="feat-item">
+          <div class="feat-item-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4.5 8-11.8V5l-8-3-8 3v5.2C4 17.5 12 22 12 22z"/></svg>
+          </div>
+          <div>
+            <h4>Ihram-ready sets</h4>
+            <p>Pre-assembled kits with everything required for Ihram — nothing missing, nothing extra.</p>
+          </div>
+        </div>
+        <div class="feat-item">
+          <div class="feat-item-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          </div>
+          <div>
+            <h4>Curated by pilgrims</h4>
+            <p>Every item selected by people who've made the journey — practical, proven and trusted.</p>
+          </div>
+        </div>
+        <div class="feat-item">
+          <div class="feat-item-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+          </div>
+          <div>
+            <h4>Modest & comfortable</h4>
+            <p>Breathable fabrics and modest cuts designed for long hours of worship and movement.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- CENTER -->
+      <div class="feat-center">
+        <div class="feat-center-ring">
+          <img src="assets/umrah-kit.png" alt="Umrah Kit">
+        </div>
+        <p class="feat-center-label">Trusted by pilgrims across Pakistan</p>
+      </div>
+
+      <!-- RIGHT -->
+      <div class="feat-col right">
+        <div class="feat-item">
+          <div class="feat-item-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+          </div>
+          <div>
+            <h4>Travel-sized options</h4>
+            <p>Compact packaging that fits airline carry-on limits — no checked-bag stress at the airport.</p>
+          </div>
+        </div>
+        <div class="feat-item">
+          <div class="feat-item-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 0 1 0 20A10 10 0 0 1 12 2z"/><path d="M8 12h8M12 8v8"/></svg>
+          </div>
+          <div>
+            <h4>Scent-free formulas</h4>
+            <p>Soaps, lotions and sprays free of fragrance — fully compliant with Ihram restrictions.</p>
+          </div>
+        </div>
+        <div class="feat-item">
+          <div class="feat-item-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12V22H4V12"/><path d="M22 7H2v5h20V7z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+          </div>
+          <div>
+            <h4>Bundle savings</h4>
+            <p>Save more when you buy complete kits — the more complete your prep, the more you save.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- GUIDES & TIPS -->
+<section class="blk wrap" style="padding-top:0;">
+  <div class="blk-head">
+    <div>
+      <span class="eyebrow">Learn before you go</span>
+      <h2>Guides &amp; Tips</h2>
+      <p>Practical advice from pilgrims who've made the journey — packing, Ihram rules and more.</p>
+    </div>
+    <a href="#" class="more">All guides <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+  </div>
+  <div class="cats" style="grid-template-columns:repeat(4,1fr);">
+    <a href="#" class="cat" style="text-align:left;padding:26px 22px;">
+      <span class="cnt" style="background:var(--gold-tint);color:var(--gold-2);border-color:var(--gold-tint);">5 min read</span>
+      <div class="ic" style="width:44px;height:44px;border-radius:50%;background:var(--gold-tint);color:var(--gold-2);display:grid;place-items:center;margin-bottom:16px;">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4.5 8-11.8V5l-8-3-8 3v5.2C4 17.5 12 22 12 22z"/></svg>
+      </div>
+      <h3 style="font-size:15px;">What to Pack for Umrah</h3>
+      <span>The complete men's &amp; women's checklist — nothing missing, nothing extra.</span>
+    </a>
+    <a href="#" class="cat" style="text-align:left;padding:26px 22px;">
+      <span class="cnt" style="background:var(--green-tint);color:var(--green-2);border-color:var(--green-tint);">8 min read</span>
+      <div class="ic" style="width:44px;height:44px;border-radius:50%;background:var(--green-tint);color:var(--green-2);display:grid;place-items:center;margin-bottom:16px;">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 2a10 10 0 0 1 0 20A10 10 0 0 1 12 2z"/><path d="M8 12h8M12 8v8"/></svg>
+      </div>
+      <h3 style="font-size:15px;">Ihram Rules &amp; Restrictions</h3>
+      <span>What's permitted and what to avoid — a clear guide for men and women.</span>
+    </a>
+    <a href="#" class="cat" style="text-align:left;padding:26px 22px;">
+      <span class="cnt" style="background:var(--mist);color:var(--ink-2);border-color:var(--line);">4 min read</span>
+      <div class="ic" style="width:44px;height:44px;border-radius:50%;background:var(--mist);color:var(--ink-2);display:grid;place-items:center;margin-bottom:16px;">
+        <svg class="icon" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+      </div>
+      <h3 style="font-size:15px;">Travel-Sized Toiletries Guide</h3>
+      <span>Scent-free, airline-compliant essentials that meet Ihram requirements.</span>
+    </a>
+    <a href="#" class="cat" style="text-align:left;padding:26px 22px;">
+      <span class="cnt" style="background:var(--gold-tint);color:var(--gold-2);border-color:var(--gold-tint);">6 min read</span>
+      <div class="ic" style="width:44px;height:44px;border-radius:50%;background:var(--gold-tint);color:var(--gold-2);display:grid;place-items:center;margin-bottom:16px;">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M20 12V22H4V12"/><path d="M22 7H2v5h20V7z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+      </div>
+      <h3 style="font-size:15px;">Choosing the Right Tabaruk Gifts</h3>
+      <span>Meaningful keepsakes from the holy lands — what to buy and why.</span>
+    </a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap f-top">
+    <div>
+      <a href="#" class="brand"><img src="assets/logo.png" alt="Yala Haji" height="52"></a>
+      <p class="f-about">Your trusted companion for Hajj &amp; Umrah — curated Ihram sets, modest wear and travel essentials, delivered across Pakistan.</p>
+    </div>
+    <div>
+      <h5>Shop</h5>
+      <ul>
+        <li><a href="#">Hajj &amp; Umrah Kits</a></li>
+        <li><a href="#">Ihram</a></li>
+        <li><a href="#">Abaya &amp; Hijab</a></li>
+        <li><a href="#">Fragrances</a></li>
+        <li><a href="#">Tabaruk &amp; Gifts</a></li>
+        <li><a href="#">Prayer Accessories</a></li>
+      </ul>
+    </div>
+    <div>
+      <h5>Help</h5>
+      <ul>
+        <li><a href="#">Track Your Order</a></li>
+        <li><a href="#">Shipping Policy</a></li>
+        <li><a href="#">Returns &amp; Refunds</a></li>
+        <li><a href="#">Size Guide</a></li>
+        <li><a href="#">FAQs</a></li>
+        <li><a href="#">Contact Us</a></li>
+      </ul>
+    </div>
+    <div>
+      <h5>Company</h5>
+      <ul>
+        <li><a href="#">About Us</a></li>
+        <li><a href="#">Blog &amp; Guides</a></li>
+        <li><a href="#">Store Locator</a></li>
+        <li><a href="#">Privacy Policy</a></li>
+        <li><a href="#">Terms of Service</a></li>
+      </ul>
+    </div>
+    <div class="f-contact">
+      <h5>Get in touch</h5>
+      <p><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.4 8.4 0 01-3.9-.9L3 21l1.9-5a8.4 8.4 0 01-.9-3.9 8.4 8.4 0 018.4-9 8.4 8.4 0 018.6 8.4z"/></svg>+92 300 000 0000</p>
+      <p><svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 7l10 6 10-6"/></svg>support@yalahaji.com</p>
+      <p><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M21 10c0 7-9 12-9 12s-9-5-9-12a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Karachi · Lahore · Islamabad</p>
+      <div class="pay">
+        <span>JazzCash</span><span>Easypaisa</span><span>Visa</span><span>Mastercard</span><span>COD</span>
+      </div>
+    </div>
+  </div>
+  <div class="wrap f-bot">
+    <span>© 2026 Yala Haji. All rights reserved.</span>
+    <span><a href="#">Privacy</a> · <a href="#">Terms</a> · <a href="#">Sitemap</a></span>
+  </div>
+</footer>
+
+<a href="#" class="fab">
+  <svg class="icon" viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.4 8.4 0 01-3.9-.9L3 21l1.9-5a8.4 8.4 0 01-.9-3.9 8.4 8.4 0 018.4-9 8.4 8.4 0 018.6 8.4z"/></svg>
+  <span>Chat with us</span>
+</a>
+
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-label="Shopping cart">
+  <div class="dr-head">
+    <div><h4>Your cart</h4><span>2 items</span></div>
+    <button class="dr-x" id="closeCart" aria-label="Close cart"><svg class="icon" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+  </div>
+  <div class="ship-bar">
+    <p>You're <b>₨1,251</b> away from free shipping</p>
+    <div class="bar"><i></i></div>
+  </div>
+  <div class="dr-body">
+    <div class="ci">
+      <img src="assets/umrah-kit.png" alt="">
+      <div class="ci-i">
+        <h5>Complete Umrah Travel Kit</h5>
+        <div class="var">Premium · Adult</div>
+        <div class="qty"><button aria-label="Decrease">−</button><span>1</span><button aria-label="Increase">+</button></div>
+      </div>
+      <div class="ci-p">₨7,499<s>₨9,999</s></div>
+    </div>
+    <div class="ci">
+      <img src="assets/fragrances.png" alt="">
+      <div class="ci-i">
+        <h5>Oud Al-Haramain Attar 12ml</h5>
+        <div class="var">Premium · Alcohol-free</div>
+        <div class="qty"><button aria-label="Decrease">−</button><span>1</span><button aria-label="Increase">+</button></div>
+      </div>
+      <div class="ci-p">₨1,899</div>
+    </div>
+  </div>
+  <div class="dr-foot">
+    <div class="tot"><span>Subtotal</span><span>₨9,398</span></div>
+    <div class="tot"><span>Shipping</span><span>Calculated at checkout</span></div>
+    <div class="tot big"><span>Total</span><span>₨9,398</span></div>
+    <a href="#" class="btn btn-dark">Checkout <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+    <p class="dr-note">Check first, then pay · 7-day returns</p>
+  </div>
+</aside>
+
+<nav class="mbar">
+  <a href="#" class="on"><svg class="icon" viewBox="0 0 24 24"><path d="M3 10l9-7 9 7v10a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>Home</a>
+  <a href="#"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>Shop</a>
+  <a href="#"><svg class="icon" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 00-7.8 7.8l1.1 1L12 21.2l7.7-7.8 1.1-1a5.5 5.5 0 000-7.8z"/></svg>Wishlist<span class="badge">3</span></a>
+  <a href="#" id="mCart"><svg class="icon" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18M16 10a4 4 0 01-8 0"/></svg>Cart<span class="badge">2</span></a>
+</nav>
+
+<script>
+(function(){
+  const slides=[...document.querySelectorAll('.slide')];
+  const dots=[...document.querySelectorAll('.c-dots button')];
+  let i=0,t;
+  const go=n=>{
+    slides[i].classList.remove('on');dots[i].classList.remove('on');
+    i=(n+slides.length)%slides.length;
+    slides[i].classList.add('on');dots[i].classList.add('on');
+  };
+  const next=()=>go(i+1), prev=()=>go(i-1);
+  const start=()=>{t=setInterval(next,6000);}, stop=()=>clearInterval(t);
+  document.querySelector('.c-arrow.n').onclick=()=>{next();stop();start();};
+  document.querySelector('.c-arrow.p').onclick=()=>{prev();stop();start();};
+  dots.forEach(d=>d.onclick=()=>{go(+d.dataset.i);stop();start();});
+  const c=document.getElementById('car');
+  c.addEventListener('mouseenter',stop);c.addEventListener('mouseleave',start);
+  if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches) start();
+
+
+  // predictive search
+  const sf=document.querySelector('.search'), si=sf.querySelector('input');
+  si.addEventListener('focus',()=>sf.classList.add('open'));
+  document.addEventListener('click',e=>{if(!sf.contains(e.target))sf.classList.remove('open');});
+
+  // cart drawer
+  const dr=document.getElementById('drawer'), sc=document.getElementById('scrim');
+  const openD=e=>{e&&e.preventDefault();dr.classList.add('on');sc.classList.add('on');document.body.style.overflow='hidden';};
+  const closeD=()=>{dr.classList.remove('on');sc.classList.remove('on');document.body.style.overflow='';};
+  document.getElementById('openCart').onclick=openD;
+  document.getElementById('mCart').onclick=openD;
+  document.getElementById('closeCart').onclick=closeD;
+  sc.onclick=closeD;
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeD();});
+  document.querySelectorAll('.add').forEach(b=>b.onclick=openD);
+
+  // swatches
+  document.querySelectorAll('.sw').forEach(g=>g.querySelectorAll('i').forEach(d=>d.onclick=()=>{
+    g.querySelector('i.on')?.classList.remove('on');d.classList.add('on');
+  }));
+
+  document.querySelectorAll('.pill').forEach(p=>p.onclick=()=>{
+    document.querySelector('.pill.on').classList.remove('on');
+    p.classList.add('on');
+  });
+})();
+</script>
+</body>
+</html>

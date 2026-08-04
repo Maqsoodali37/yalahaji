@@ -1,0 +1,17 @@
+version: "3.9"
+
+# Production overrides — use pre-built images from GHCR instead of building locally.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  api:
+    image: ghcr.io/${GITHUB_OWNER}/yalahaji-api:latest
+    build: !reset null
+
+  storefront:
+    image: ghcr.io/${GITHUB_OWNER}/yalahaji-storefront:latest
+    build: !reset null
+
+  admin:
+    image: ghcr.io/${GITHUB_OWNER}/yalahaji-admin:latest
+    build: !reset null

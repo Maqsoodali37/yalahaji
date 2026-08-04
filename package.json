@@ -1,0 +1,15 @@
+{
+  "name": "yalahaji",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Yala Haji — Hajj & Umrah e-commerce platform",
+  "scripts": {
+    "dev": "cd apps/storefront && npm run dev",
+    "build": "cd apps/storefront && npm run build",
+    "type-check": "cd apps/storefront && npm run type-check",
+    "lint": "cd apps/storefront && npm run lint"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

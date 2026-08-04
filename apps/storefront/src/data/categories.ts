@@ -1,0 +1,176 @@
+import type { Category } from '@/types'
+
+// Local asset images
+export const IMG = {
+  kit:       '/assets/umrah-kit.png',
+  abaya:     '/assets/abaya.png',
+  fragrance: '/assets/fragrances.png',
+  tabaruk:   '/assets/tabaruk.png',
+}
+
+export const categories: Category[] = [
+  {
+    id: 'cat-kits',
+    slug: 'kits',
+    name: { en: 'Hajj & Umrah Kits', ur: 'حج و عمرہ کٹس', ar: 'طقم الحج والعمرة' },
+    description: {
+      en: 'Complete kits for your sacred journey — Economy, Standard and Premium tiers.',
+      ur: 'آپ کے مقدس سفر کے لیے مکمل کٹس۔',
+      ar: 'طقم كاملة لرحلتك المقدسة.',
+    },
+    image: IMG.kit,
+    icon: '🕋',
+    productCount: 12,
+    featured: true,
+    order: 1,
+  },
+  {
+    id: 'cat-ihram',
+    slug: 'ihram',
+    name: { en: 'Ihram', ur: 'احرام', ar: 'الإحرام' },
+    description: {
+      en: 'Unstitched ihram cloth for men — breathable, durable and pure.',
+      ur: 'مردوں کے لیے احرام کپڑا۔',
+      ar: 'قماش الإحرام غير المخيط للرجال.',
+    },
+    image: IMG.kit,
+    icon: '🤍',
+    productCount: 8,
+    featured: true,
+    order: 2,
+    children: [
+      {
+        id: 'cat-ihram-men',
+        slug: 'ihram-men',
+        name: { en: 'Men\'s Ihram', ur: 'مردوں کا احرام', ar: 'إحرام الرجال' },
+        description: { en: '', ur: '', ar: '' },
+        image: '/images/categories/ihram-men.jpg',
+        parentId: 'cat-ihram',
+        productCount: 5,
+        featured: false,
+        order: 1,
+      },
+      {
+        id: 'cat-ihram-women',
+        slug: 'ihram-women',
+        name: { en: 'Women\'s Ihram', ur: 'خواتین کا احرام', ar: 'إحرام النساء' },
+        description: { en: '', ur: '', ar: '' },
+        image: '/images/categories/ihram-women.jpg',
+        parentId: 'cat-ihram',
+        productCount: 3,
+        featured: false,
+        order: 2,
+      },
+    ],
+  },
+  {
+    id: 'cat-abaya',
+    slug: 'abaya-hijab',
+    name: { en: 'Abaya & Hijab', ur: 'عبایہ و حجاب', ar: 'العباءة والحجاب' },
+    description: {
+      en: 'Modest, breathable abayas and hijabs designed for Hajj & Umrah.',
+      ur: 'حج و عمرہ کے لیے شائستہ اور آرام دہ عبایہ۔',
+      ar: 'عباءات وحجابات متواضعة ومريحة.',
+    },
+    image: IMG.abaya,
+    icon: '👗',
+    productCount: 15,
+    featured: true,
+    order: 3,
+  },
+  {
+    id: 'cat-fragrance',
+    slug: 'fragrances',
+    name: { en: 'Fragrances & Attar', ur: 'خوشبو و عطر', ar: 'العطور والأطيار' },
+    description: {
+      en: 'Alcohol-free attars and fragrances — permissible for ihram.',
+      ur: 'الکوحل سے پاک عطر — احرام میں جائز۔',
+      ar: 'عطور خالية من الكحول — مسموح بها في الإحرام.',
+    },
+    image: IMG.fragrance,
+    icon: '🌹',
+    productCount: 20,
+    featured: true,
+    order: 4,
+  },
+  {
+    id: 'cat-tabaruk',
+    slug: 'tabaruk-gifts',
+    name: { en: 'Tabaruk & Gifts', ur: 'تبرک و تحائف', ar: 'التبرك والهدايا' },
+    description: {
+      en: 'Blessed souvenirs and gift sets from the holy cities.',
+      ur: 'مقدس شہروں سے متبرک تحائف۔',
+      ar: 'هدايا مباركة من المدن المقدسة.',
+    },
+    image: IMG.tabaruk,
+    icon: '🎁',
+    productCount: 18,
+    featured: false,
+    order: 5,
+  },
+  {
+    id: 'cat-prayer',
+    slug: 'prayer-accessories',
+    name: { en: 'Prayer Accessories', ur: 'نماز کی اشیاء', ar: 'مستلزمات الصلاة' },
+    description: {
+      en: 'Tasbeeh, janamaz, qibla compass and more for your daily prayers.',
+      ur: 'تسبیح، جانماز، قبلہ کمپاس اور مزید۔',
+      ar: 'مسبحة، سجادة صلاة، بوصلة قبلة والمزيد.',
+    },
+    image: IMG.tabaruk,
+    icon: '📿',
+    productCount: 22,
+    featured: true,
+    order: 6,
+  },
+  {
+    id: 'cat-travel',
+    slug: 'travel-accessories',
+    name: { en: 'Travel Accessories', ur: 'سفری لوازمات', ar: 'مستلزمات السفر' },
+    description: {
+      en: 'Bags, pouches, travel pillows and essentials for the journey.',
+      ur: 'بیگ، تھیلے، ٹریول تکیے اور سفری ضروریات۔',
+      ar: 'حقائب، أكياس، وسائد سفر ومستلزمات أساسية.',
+    },
+    image: IMG.kit,
+    icon: '🧳',
+    productCount: 14,
+    featured: false,
+    order: 7,
+  },
+  {
+    id: 'cat-thobe',
+    slug: 'thobe',
+    name: { en: 'Thobe', ur: 'جبہ / ثوب', ar: 'الثوب' },
+    description: {
+      en: 'Classic and modern thobes for men — comfortable for long worship sessions.',
+      ur: 'مردوں کے لیے کلاسک اور جدید ثوب۔',
+      ar: 'أثواب كلاسيكية وحديثة للرجال.',
+    },
+    image: IMG.abaya,
+    icon: '👘',
+    productCount: 10,
+    featured: false,
+    order: 8,
+  },
+  {
+    id: 'cat-dates',
+    slug: 'dates-zamzam',
+    name: { en: 'Dates & Zam Zam', ur: 'کھجور و زم زم', ar: 'التمور وزمزم' },
+    description: {
+      en: 'Premium Ajwa, Medjool and Khudri dates plus Zam Zam water.',
+      ur: 'عجوہ، میدجول اور خضری کھجور اور زم زم پانی۔',
+      ar: 'تمور عجوة ومجدول وخضري فاخرة بالإضافة إلى ماء زمزم.',
+    },
+    image: IMG.tabaruk,
+    icon: '🌴',
+    productCount: 9,
+    featured: false,
+    order: 9,
+  },
+]
+
+export const getCategoryBySlug = (slug: string) =>
+  categories.find((c) => c.slug === slug) ?? null
+
+export const getFeaturedCategories = () => categories.filter((c) => c.featured)
