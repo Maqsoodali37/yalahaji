@@ -178,11 +178,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.admin
-      # NEXT_PUBLIC_* must be set at build time — Next inlines them into the
-      # client bundle. Setting them under `environment` alone has no effect.
-      args:
-        NEXT_PUBLIC_ADMIN_API_URL:  ${ADMIN_API_URL:-http://localhost:4000/api/v1}
-        NEXT_PUBLIC_STOREFRONT_URL: ${STOREFRONT_URL:-http://localhost:3000}
     container_name: yalahaji-admin
     restart: unless-stopped
     ports:
@@ -190,6 +185,7 @@ services:
     environment:
       NODE_ENV:                    production
       PORT:                        3001
+      NEXT_PUBLIC_ADMIN_API_URL:   http://localhost:4000/api/v1
     depends_on:
       api:
         condition: service_healthy
