@@ -17,7 +17,11 @@ const PRODUCT_SELECT = {
   metaTitle: true, metaDesc: true,
   createdAt: true, updatedAt: true,
   category: { select: { id: true, slug: true, nameEn: true } },
-  variants: true,
+  // Ordered cheapest-first. Without an `orderBy` the database returns these in
+  // whatever order it likes, and anything downstream that reached for
+  // `variants[0]` got an arbitrary variant — which is how a product card and
+  // its own product page came to advertise two different prices.
+  variants: { orderBy: { price: 'asc' as const } },
   images: { orderBy: { order: 'asc' as const } },
   badges: true,
   tags: true,

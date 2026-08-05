@@ -36,7 +36,8 @@ const KIT_PRODUCT_SELECT = {
   createdAt: true,
   updatedAt: true,
   category: { select: { id: true, slug: true, nameEn: true } },
-  variants: true,
+  // Cheapest-first, matching `PRODUCT_SELECT` in products.service.ts.
+  variants: { orderBy: { price: 'asc' as const } },
   images: { orderBy: { order: 'asc' as const } },
   badges: true,
   tags: true,

@@ -129,6 +129,7 @@
     "items": "{count} items",
     "subtotal": "Subtotal",
     "shipping": "Shipping",
+    "freeShipping": "Free",
     "tax": "Tax",
     "total": "Total",
     "discount": "Discount",

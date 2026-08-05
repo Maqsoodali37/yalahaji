@@ -5,6 +5,10 @@ import { useTranslations, useLocale } from 'next-intl'
 import { Phone, MapPin, MessageCircle, Instagram, Facebook, Youtube } from 'lucide-react'
 import { SafeImage } from '@/components/ui/safe-image'
 import { SOCIAL, WHATSAPP_DISPLAY } from '@/lib/seo'
+import {
+  ENABLED_PAYMENT_OPTIONS,
+  COMING_SOON_PAYMENT_OPTIONS,
+} from '@/lib/payment-methods'
 
 export function Footer() {
   const t = useTranslations('footer')
@@ -146,16 +150,28 @@ export function Footer() {
               </li>
             </ul>
 
-            {/* Payment methods */}
+            {/* Payment methods — driven by the same list checkout reads, so
+                the footer cannot advertise a method that cannot be selected.
+                It previously listed all four, including Bank Transfer, which
+                is not supported at all. */}
             <div className="mt-4">
               <p className="text-[11px] text-stone mb-2 font-semibold">Accepted Payments</p>
               <div className="flex gap-1.5 flex-wrap">
-                {['JazzCash', 'Easypaisa', 'COD', 'Bank Transfer'].map((pm) => (
+                {ENABLED_PAYMENT_OPTIONS.map((pm) => (
                   <span
-                    key={pm}
+                    key={pm.key}
                     className="text-[10px] font-bold bg-white border border-line text-ink-2 px-2 py-1 rounded"
                   >
-                    {pm}
+                    {pm.label}
+                  </span>
+                ))}
+                {COMING_SOON_PAYMENT_OPTIONS.map((pm) => (
+                  <span
+                    key={pm.key}
+                    title="Coming soon"
+                    className="text-[10px] font-bold bg-paper border border-line text-stone px-2 py-1 rounded"
+                  >
+                    {pm.label} · soon
                   </span>
                 ))}
               </div>

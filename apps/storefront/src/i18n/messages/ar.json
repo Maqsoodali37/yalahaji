@@ -129,6 +129,7 @@
     "items": "{count} منتجات",
     "subtotal": "المجموع الفرعي",
     "shipping": "الشحن",
+    "freeShipping": "مجاني",
     "tax": "الضريبة",
     "total": "الإجمالي",
     "discount": "الخصم",

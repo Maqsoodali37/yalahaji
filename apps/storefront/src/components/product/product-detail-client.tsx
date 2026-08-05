@@ -13,7 +13,7 @@ import { ProductImage } from '@/components/ui/product-image'
 import { useCartStore } from '@/store/cart'
 import { useWishlistStore } from '@/store/wishlist'
 import {
-  formatPrice, formatDiscount, getTierBadgeClass, getTierTextClass, cn
+  formatPrice, formatDiscount, getTierBadgeClass, getTierTextClass, getDefaultVariant, cn
 } from '@/lib/utils'
 import { SOCIAL } from '@/lib/seo'
 import { ProductCard } from '@/components/shop/product-card'
@@ -29,7 +29,12 @@ interface Props {
 export function ProductDetailClient({ product, reviews, relatedProducts }: Props) {
   const locale = useLocale()
 
-  const [selectedVariant, setSelectedVariant] = useState<ProductVariant>(product.variants[0])
+  // Opens on the same variant the product card priced — cheapest in stock.
+  // This used to be `product.variants[0]`, and the API returned variants in no
+  // particular order, so a card advertising ₨1,199 could open at ₨4,999.
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant>(
+    () => getDefaultVariant(product.variants) ?? product.variants[0],
+  )
   const [quantity, setQuantity] = useState(1)
   const [activeImage, setActiveImage] = useState(0)
   const [giftWrap, setGiftWrap] = useState(false)

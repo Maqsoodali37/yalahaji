@@ -368,21 +368,33 @@ never going to be on the parcel.
 
 ### Payment methods
 
-Only **Cash on Delivery** and **Bank Transfer** can be selected. Both work
-without a gateway — cash is collected on delivery, transfers are reconciled by
-hand.
+**Cash on Delivery is the only method that can be selected.** It is also the
+only one needing no integration — the courier collects, and `paymentStatus`
+moves on fulfilment rather than on a callback.
 
-JazzCash, Easypaisa and card are shown in checkout with a **Coming Soon** badge,
-greyed out and non-selectable. There is no gateway integration behind any of
-them: no redirect, no callback, nothing that moves `Order.paymentStatus` off
-`unpaid`. Offering them produced orders that looked paid to the customer and
-were indistinguishable from unpaid ones to fulfilment. Checkout also used to
+| Method | State |
+|---|---|
+| Cash on Delivery | Enabled |
+| JazzCash | Shown, greyed out, **Coming Soon** |
+| Easypaisa | Shown, greyed out, **Coming Soon** |
+| Credit / Debit Card | Shown, greyed out, **Coming Soon** |
+| Bank Transfer | Not offered — the business does not support it |
+
+The three gateway-backed methods have no integration behind them: no redirect,
+no callback, nothing that moves `Order.paymentStatus` off `unpaid`. Offering
+them produced orders that looked paid to the customer and were
+indistinguishable from unpaid ones to fulfilment. Checkout also used to
 *default* to `jazzcash`, so clicking straight through the payment step selected
 one.
 
-Enforced on both sides — `CreateOrderDto` validates `paymentMethod` with
+Bank Transfer is absent from both the enabled and coming-soon lists — it is not
+an option and is not planned, so it is not advertised either.
+
+Enforced on both sides. `CreateOrderDto` validates `paymentMethod` with
 `@IsIn(ENABLED_PAYMENT_METHODS)` rather than against the whole enum, so a
-hand-rolled request cannot bypass the UI.
+hand-rolled request cannot bypass the UI. The footer's "Accepted Payments"
+badges read the same lists, so it can no longer advertise something checkout
+will not take.
 
 | Where | File |
 |---|---|
@@ -391,9 +403,13 @@ hand-rolled request cannot bypass the UI.
 
 To enable one when its gateway ships, flip `comingSoon` in the storefront list
 **and** add the method to `ENABLED_PAYMENT_METHODS` on the API. Both are
-required. The `PaymentMethod` enum and both TypeScript unions deliberately keep
-all five values — historical orders may already hold a disabled method, and
-admin and order-detail screens must still render them.
+required, and `orders.service.spec.ts` asserts the rejected set — so re-listing
+a method in the UI without wiring it up fails the test first.
+
+The `PaymentMethod` enum and both TypeScript unions deliberately keep all five
+values, `bank_transfer` included. Removing one would need a migration, would
+fail against any historical row holding it, and admin and order-detail screens
+must still render such an order.
 
 ### Newly integrated endpoints
 

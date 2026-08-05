@@ -166,7 +166,12 @@ export function CartDrawer() {
               <div className="flex justify-between text-sm">
                 <span className="text-stone">{t('shipping')}</span>
                 <span className={shipping === 0 ? 'text-green font-semibold' : 'text-ink'}>
-                  {shipping === 0 ? t('freeShipping' as never) ?? 'Free' : formatPrice(shipping)}
+                  {/* `t('freeShipping' as never) ?? 'Free'` before: the cast
+                      silenced the type error for a key that did not exist, and
+                      next-intl returns the key path for a miss rather than
+                      null — so the fallback never ran and shoppers saw the
+                      literal "cart.freeShipping". */}
+                  {shipping === 0 ? t('freeShipping') : formatPrice(shipping)}
                 </span>
               </div>
               <div className="flex justify-between font-bold text-base border-t border-line pt-3">

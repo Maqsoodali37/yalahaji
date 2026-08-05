@@ -18,6 +18,31 @@ export function getLowestPrice(variants: ProductVariant[]): number {
   return Math.min(...variants.map((v) => v.price))
 }
 
+/**
+ * The variant a product should be represented by before the shopper picks one.
+ *
+ * Cheapest in stock, falling back to the cheapest overall when everything is
+ * out of stock. Every surface must agree on this: the card, the product page
+ * and add-to-cart each used to decide independently — the card *displayed*
+ * `getLowestPrice()` but *added* `variants[0]`, and the product page opened on
+ * `variants[0]` too. Since the API returned variants in no particular order,
+ * a product could advertise ₨1,199, open at ₨4,999, and put ₨4,999 in the
+ * basket when the shopper clicked the price they were shown.
+ */
+export function getDefaultVariant(variants: ProductVariant[]): ProductVariant | undefined {
+  if (variants.length === 0) return undefined
+
+  const byPriceAsc = [...variants].sort((a, b) => a.price - b.price)
+  return byPriceAsc.find((v) => v.stock > 0) ?? byPriceAsc[0]
+}
+
+/** True when variants differ in price, so a single figure needs a "From". */
+export function hasPriceRange(variants: ProductVariant[]): boolean {
+  if (variants.length < 2) return false
+  const { min, max } = getPriceRange(variants)
+  return min !== max
+}
+
 export function getHighestPrice(variants: ProductVariant[]): number {
   return Math.max(...variants.map((v) => v.price))
 }

@@ -129,9 +129,11 @@ describe('CreateOrderDto — payment method', () => {
     }
 
     expect(await paymentErrorsFor('cod')).toHaveLength(0)
-    expect(await paymentErrorsFor('bank_transfer')).toHaveLength(0)
 
-    for (const disabled of ['jazzcash', 'easypaisa', 'card']) {
+    // `bank_transfer` is not supported by the business, and the other three
+    // have no gateway behind them. All four are rejected at the DTO, so
+    // re-listing one in the UI without wiring it up fails here first.
+    for (const disabled of ['bank_transfer', 'jazzcash', 'easypaisa', 'card']) {
       expect(await paymentErrorsFor(disabled)).toHaveLength(1)
     }
   })

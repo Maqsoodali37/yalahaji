@@ -13,6 +13,10 @@ import type { PaymentMethod } from '@/types'
  * but they are not selectable. When a gateway ships, flip `comingSoon` here and
  * add the method to `ENABLED_PAYMENT_METHODS` on the API — both are required,
  * since the DTO validates against its own list.
+ *
+ * `bank_transfer` is intentionally not listed at all. The business does not
+ * support it, so it is not an option and not "coming soon" either. The value
+ * stays in the `PaymentMethod` union only so historical orders still render.
  */
 export interface PaymentOption {
   key: PaymentMethod
@@ -30,12 +34,6 @@ export const PAYMENT_OPTIONS: PaymentOption[] = [
     icon: '💵',
     desc: 'Open & check first, then pay.',
     badge: 'Most Popular',
-  },
-  {
-    key: 'bank_transfer',
-    label: 'Bank Transfer',
-    icon: '🏦',
-    desc: 'Transfer to our bank account. We confirm before dispatch.',
   },
   {
     key: 'jazzcash',
@@ -61,6 +59,8 @@ export const PAYMENT_OPTIONS: PaymentOption[] = [
 ]
 
 export const ENABLED_PAYMENT_OPTIONS = PAYMENT_OPTIONS.filter((o) => !o.comingSoon)
+
+export const COMING_SOON_PAYMENT_OPTIONS = PAYMENT_OPTIONS.filter((o) => o.comingSoon)
 
 /**
  * What a fresh checkout starts on. Previously `jazzcash`, which is now not a

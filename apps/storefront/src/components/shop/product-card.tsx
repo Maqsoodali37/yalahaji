@@ -11,6 +11,8 @@ import {
   formatPrice,
   formatDiscount,
   getLowestPrice,
+  getDefaultVariant,
+  hasPriceRange,
   getTierBadgeClass,
   cn,
 } from '@/lib/utils'
@@ -31,8 +33,14 @@ export function ProductCard({ product, view = 'grid' }: Props) {
   const { isInWishlist, toggle: toggleWishlist } = useWishlistStore()
   const { isInCompare, toggle: toggleCompare } = useCompareStore()
 
-  const defaultVariant = product.variants[0]
-  const lowestPrice = getLowestPrice(product.variants)
+  // One variant drives the price shown, the struck-through compare-at price,
+  // the discount badge and what add-to-cart puts in the basket. These used to
+  // be computed from two different variants, so the card could show one price
+  // and add another.
+  const defaultVariant = getDefaultVariant(product.variants)
+  const displayPrice = defaultVariant?.price ?? getLowestPrice(product.variants)
+  const showFrom = hasPriceRange(product.variants)
+
   const inWishlist = isInWishlist(product.id)
   const inCompare = isInCompare(product.id)
 
@@ -40,9 +48,13 @@ export function ProductCard({ product, view = 'grid' }: Props) {
   const isLowStock = !isOutOfStock && product.variants.some(
     (v) => v.stock > 0 && v.stock <= v.lowStockThreshold
   )
-  const hasDiscount = defaultVariant?.compareAtPrice
+  // Only a genuine markdown on the variant being priced. Reading
+  // `compareAtPrice` off a different variant produced "₨1,199, was ₨5,999".
+  const hasDiscount = Boolean(
+    defaultVariant?.compareAtPrice && defaultVariant.compareAtPrice > defaultVariant.price,
+  )
   const discount = hasDiscount
-    ? formatDiscount(defaultVariant.compareAtPrice!, defaultVariant.price)
+    ? formatDiscount(defaultVariant!.compareAtPrice!, defaultVariant!.price)
     : 0
 
   const handleAddToCart = (e: React.MouseEvent) => {
@@ -84,10 +96,13 @@ export function ProductCard({ product, view = 'grid' }: Props) {
               <p className="text-xs text-stone mt-0.5">{product.shortDescription.en}</p>
             </div>
             <div className="text-right flex-shrink-0">
-              <p className="font-bold text-ink">{formatPrice(lowestPrice)}</p>
+              <p className="font-bold text-ink">
+                {showFrom && <span className="text-xs font-medium text-stone me-1">From</span>}
+                {formatPrice(displayPrice)}
+              </p>
               {hasDiscount && (
                 <p className="text-xs text-stone line-through">
-                  {formatPrice(defaultVariant.compareAtPrice!)}
+                  {formatPrice(defaultVariant!.compareAtPrice!)}
                 </p>
               )}
             </div>
@@ -96,8 +111,8 @@ export function ProductCard({ product, view = 'grid' }: Props) {
             <button onClick={handleAddToCart} className="btn-primary text-xs px-4 py-2">
               Add to Cart
             </button>
-            <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-sm', getTierBadgeClass(defaultVariant.tier))}>
-              {defaultVariant.tier}
+            <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-sm', getTierBadgeClass(defaultVariant!.tier))}>
+              {defaultVariant!.tier}
             </span>
           </div>
         </div>
@@ -186,8 +201,8 @@ export function ProductCard({ product, view = 'grid' }: Props) {
       {/* Info */}
       <div className="p-3">
         {/* Tier badge */}
-        <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded-sm', getTierBadgeClass(defaultVariant.tier))}>
-          {defaultVariant.tier}
+        <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded-sm', getTierBadgeClass(defaultVariant!.tier))}>
+          {defaultVariant!.tier}
         </span>
 
         <Link href={`/${locale}/products/${product.slug}`}>
@@ -234,10 +249,13 @@ export function ProductCard({ product, view = 'grid' }: Props) {
         {/* Price + add button — matches approved .prow / .add */}
         <div className="flex items-center justify-between gap-2 mt-2">
           <div className="flex items-baseline gap-2 min-w-0">
-            <p className="font-bold text-base text-ink">{formatPrice(lowestPrice)}</p>
+            <p className="font-bold text-base text-ink">
+              {showFrom && <span className="text-xs font-medium text-stone me-1">From</span>}
+              {formatPrice(displayPrice)}
+            </p>
             {hasDiscount && (
               <p className="text-xs text-stone line-through">
-                {formatPrice(defaultVariant.compareAtPrice!)}
+                {formatPrice(defaultVariant!.compareAtPrice!)}
               </p>
             )}
           </div>

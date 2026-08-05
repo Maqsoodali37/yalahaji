@@ -521,8 +521,8 @@ export function CheckoutClient() {
                   })}
 
                   <p className="text-xs text-stone pt-1">
-                    Online payments are coming soon. For now you can pay cash on delivery or by
-                    bank transfer.
+                    Online payments are coming soon. For now, orders are paid in cash on
+                    delivery.
                   </p>
 
                   <button

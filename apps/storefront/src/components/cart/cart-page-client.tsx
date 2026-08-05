@@ -254,7 +254,7 @@ export function CartPageClient() {
                 <div className="flex justify-between">
                   <span className="text-stone">{t('shipping')}</span>
                   <span className={shipping === 0 ? 'text-green font-semibold' : 'font-medium text-ink'}>
-                    {shipping === 0 ? 'Free' : formatPrice(shipping)}
+                    {shipping === 0 ? t('freeShipping') : formatPrice(shipping)}
                   </span>
                 </div>
                 <div className="flex justify-between font-bold text-base border-t border-line pt-3">
