@@ -23,9 +23,18 @@ import { routing } from '@/i18n/routing'
  * publish appears here on the next build without touching this file.
  */
 
-// Prerendered at build time, exactly as the old sitemap.ts was — nginx caches
-// the result and `lastModified` for static pages is the build timestamp.
-export const dynamic = 'force-static'
+// Rendered per request, NOT at build time. The entries come from the API, and
+// inside `docker compose build` no API exists — BuildKit does not join the
+// compose network, and the api service has not started yet regardless. Under
+// `force-static` Next tried to prerender this route during the image build,
+// the fetches never resolved, and the build died on Next's 60s
+// static-worker timeout ("Failed to build /sitemap.xml/route ... after 3
+// attempts").
+//
+// Serving it dynamically costs one API round trip per request, which nginx
+// and any CDN in front of it absorb via the Cache-Control below. Crawlers
+// fetch a sitemap a few times a day, not a few times a second.
+export const dynamic = 'force-dynamic'
 
 const BASE_URL = (
   process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
@@ -188,7 +197,11 @@ export async function GET(): Promise<Response> {
       // `application/xml` (not text/xml) is what Google's docs use, and it is
       // the type that makes Chrome apply the XSLT rather than download the file.
       'Content-Type': 'application/xml; charset=utf-8',
-      'Cache-Control': 'public, max-age=0, must-revalidate',
+      // Built per request, so cache it at the edge for an hour rather than
+      // hitting the API on every crawler poll. `stale-while-revalidate` keeps
+      // serving the old file while the new one is generated, so a slow or
+      // down API never turns into a 5xx on /sitemap.xml.
+      'Cache-Control': 'public, max-age=0, s-maxage=3600, stale-while-revalidate=86400',
     },
   })
 }

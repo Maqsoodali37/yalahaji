@@ -14,8 +14,8 @@
     "@tanstack/react-query-devtools": "^5.62.7",
     "next": "15.1.3",
     "next-intl": "^3.26.3",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
     "zustand": "^5.0.2",
     "clsx": "^2.1.1",
     "tailwind-merge": "^2.6.0",
@@ -48,5 +48,10 @@
     "tailwindcss": "^3.4.17",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.7.2"
+  },
+  "//overrides": "Next 15.1.3 vendors React 19.0.0-rc-65e06cb7-20241218 for its server renderer. A caret range lets React drift to 19.2.x, and the newer thenables it creates fail the vendored renderer's invariant mid-stream: 'Expected a suspended thenable' -> 'failed to pipe response'. Pinning here holds every transitive dep to the same copy. Lift only together with the Next version.",
+  "overrides": {
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
   }
 }

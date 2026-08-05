@@ -17,8 +17,12 @@ import { getStoredSessionId } from './session'
  * Browser-visible API origin. Inlined at build time, so docker-compose
  * passes it as a build arg rather than only as an environment variable.
  */
+// `||`, not `??`: docker compose substitutes an unset variable with an empty
+// string and still passes the build arg, so `NEXT_PUBLIC_API_URL=""` reaches
+// the build. `??` would accept that empty string and every fetch would be
+// made against a relative URL, which has no meaning on the server.
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1'
+  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1'
 
 /**
  * Server-side origin. Inside Docker the storefront container can reach the
@@ -29,6 +33,9 @@ export const API_URL =
 export const INTERNAL_API_URL = process.env.INTERNAL_API_URL || API_URL
 
 const isServer = typeof window === 'undefined'
+
+/** Upper bound on a single API call. Callers may override with their own `signal`. */
+const REQUEST_TIMEOUT_MS = 10_000
 
 export function apiBase() {
   return isServer ? INTERNAL_API_URL : API_URL
@@ -130,6 +137,11 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     res = await fetch(`${apiBase()}${path}`, {
       ...rest,
       headers: finalHeaders,
+      // Without this an unreachable-but-routable API (a firewalled host, a
+      // load balancer that accepts the SYN and never replies) hangs the
+      // request until the platform kills it. A bounded wait turns that into
+      // an ApiError, which apiFetchSafe degrades to its fallback.
+      signal: rest.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       ...(next ? { next } : {}),
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     })

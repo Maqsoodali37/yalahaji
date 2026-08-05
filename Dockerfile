@@ -9,7 +9,10 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY apps/storefront/package*.json ./
-RUN npm install
+# npm ci, not npm install — install lets React drift off the lockfile, and a
+# React minor ahead of what Next 15.1.3 vendors breaks RSC streaming with
+# "Expected a suspended thenable".
+RUN npm ci
 
 # ── Stage 2: Builder ─────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder

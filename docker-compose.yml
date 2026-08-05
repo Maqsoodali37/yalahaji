@@ -112,6 +112,13 @@ services:
       NODE_ENV:            ${NODE_ENV:-production}
       PORT:                ${API_PORT:-4000}
       SWAGGER_ENABLED:     ${SWAGGER_ENABLED:-false}
+      # Built here rather than taken from .env, and pinned to the `mysql`
+      # service name. .env's DATABASE_URL interpolates ${MYSQL_HOST}, which
+      # has to be `localhost` for anyone running the API outside Docker —
+      # but inside this container `localhost` is the API itself, so Prisma
+      # fails with "Can't reach database server at localhost:3306". The host
+      # is not a per-environment choice in here; it is always the service.
+      DATABASE_URL:        mysql://${MYSQL_USER}:${MYSQL_ENCODED_PASS}@mysql:${MYSQL_PORT:-3306}/${MYSQL_DATABASE}
       REDIS_HOST:          ${REDIS_HOST:-redis}
       REDIS_PORT:          ${REDIS_PORT:-6379}
       MEILISEARCH_URL:     ${MEILISEARCH_URL:-http://meilisearch:7700}
