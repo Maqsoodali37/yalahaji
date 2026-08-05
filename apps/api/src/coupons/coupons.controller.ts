@@ -1,8 +1,8 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common'
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger'
+import { ApiTags, ApiCookieAuth, ApiOperation } from '@nestjs/swagger'
 import { CouponsService } from './coupons.service'
 import { CreateCouponDto } from './dto/create-coupon.dto'
-import { JwtAuthGuard } from '../auth/jwt-auth.guard'
+import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard'
 import { RolesGuard } from '../auth/roles.guard'
 import { Roles, STAFF_MANAGE } from '../auth/roles.decorator'
 
@@ -18,19 +18,19 @@ export class CouponsController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiBearerAuth()
+  @UseGuards(AdminJwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiCookieAuth()
   @ApiOperation({ summary: 'Admin: list coupons' })
   findAll() { return this.couponsService.findAll() }
 
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiBearerAuth()
+  @UseGuards(AdminJwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiCookieAuth()
   create(@Body() dto: CreateCouponDto) { return this.couponsService.create(dto) }
 
   @Patch(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiBearerAuth()
+  @UseGuards(AdminJwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiCookieAuth()
   update(@Param('id') id: string, @Body() dto: Partial<CreateCouponDto>) { return this.couponsService.update(id, dto) }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiBearerAuth()
+  @UseGuards(AdminJwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiCookieAuth()
   remove(@Param('id') id: string) { return this.couponsService.remove(id) }
 }

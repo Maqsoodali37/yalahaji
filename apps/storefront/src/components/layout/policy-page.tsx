@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
+import { SOCIAL } from '@/lib/seo'
 
 interface PolicyPageProps {
   eyebrow: string
@@ -67,7 +68,7 @@ export function PolicyPage({
             </p>
           </div>
           <a
-            href="https://wa.me/923111234567"
+            href={SOCIAL.whatsapp}
             target="_blank"
             rel="noopener noreferrer"
             className="btn-primary flex-shrink-0"

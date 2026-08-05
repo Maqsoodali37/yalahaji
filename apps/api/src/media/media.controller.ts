@@ -1,15 +1,15 @@
 import { Controller, Post, Delete, Body, Req, UseGuards, BadRequestException } from '@nestjs/common'
-import { ApiTags, ApiBearerAuth, ApiConsumes, ApiOperation } from '@nestjs/swagger'
+import { ApiTags, ApiCookieAuth, ApiConsumes, ApiOperation } from '@nestjs/swagger'
 import { MediaService } from './media.service'
-import { JwtAuthGuard } from '../auth/jwt-auth.guard'
+import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard'
 import { RolesGuard } from '../auth/roles.guard'
 import { Roles, STAFF_MANAGE } from '../auth/roles.decorator'
 
 @ApiTags('media')
 @Controller('media')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(AdminJwtAuthGuard, RolesGuard)
 @Roles(...STAFF_MANAGE)
-@ApiBearerAuth()
+@ApiCookieAuth()
 export class MediaController {
   constructor(private readonly mediaService: MediaService) {}
 

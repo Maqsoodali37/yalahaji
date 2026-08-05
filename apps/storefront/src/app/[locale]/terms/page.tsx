@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getLocale } from 'next-intl/server'
+import { SOCIAL } from '@/lib/seo'
 import {
   PolicyPage,
   PolicySection,
@@ -46,7 +47,7 @@ export default async function TermsPage() {
           &ldquo;our&rdquo; refer to the business trading as Yala Haji, operating
           from Shop 5, Islam Market, Karachi, Pakistan. You can reach us on
           WhatsApp at{' '}
-          <a href="https://wa.me/923111234567" className="text-green font-semibold hover:underline">
+          <a href={SOCIAL.whatsapp} className="text-green font-semibold hover:underline">
             +92 311 1234567
           </a>
           .
@@ -196,7 +197,7 @@ export default async function TermsPage() {
       <PolicySection heading="15. Contact">
         <p>
           Questions about these terms can be sent to us on WhatsApp at{' '}
-          <a href="https://wa.me/923111234567" className="text-green font-semibold hover:underline">
+          <a href={SOCIAL.whatsapp} className="text-green font-semibold hover:underline">
             +92 311 1234567
           </a>{' '}
           or by phone at{' '}

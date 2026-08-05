@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useTranslations, useLocale } from 'next-intl'
 import { Phone, MapPin, MessageCircle, Instagram, Facebook, Youtube } from 'lucide-react'
 import { SafeImage } from '@/components/ui/safe-image'
+import { SOCIAL, WHATSAPP_DISPLAY } from '@/lib/seo'
 
 export function Footer() {
   const t = useTranslations('footer')
@@ -28,18 +29,19 @@ export function Footer() {
             <p className="text-[13px] text-ink-2 max-w-[250px] mb-[18px]">{t('tagline')}</p>
             <div className="flex gap-2.5">
               {[
-                { href: 'https://instagram.com/yalahaji', icon: Instagram },
-                { href: 'https://facebook.com/yalahaji', icon: Facebook },
-                { href: 'https://youtube.com/@yalahaji', icon: Youtube },
-              ].map(({ href, icon: Icon }) => (
+                { href: SOCIAL.instagram, icon: Instagram, label: 'Instagram' },
+                { href: SOCIAL.facebook, icon: Facebook, label: 'Facebook' },
+                { href: SOCIAL.youtube, icon: Youtube, label: 'YouTube' },
+              ].map(({ href, icon: Icon, label }) => (
                 <a
                   key={href}
                   href={href}
                   target="_blank"
                   rel="noopener noreferrer"
+                  aria-label={`${label} — Yala Haji`}
                   className="w-[34px] h-[34px] rounded-full border border-line bg-white flex items-center justify-center text-ink-2 hover:bg-ink hover:text-white hover:border-ink transition-colors"
                 >
-                  <Icon className="w-[15px] h-[15px]" />
+                  <Icon className="w-[15px] h-[15px]" aria-hidden="true" />
                 </a>
               ))}
             </div>
@@ -132,8 +134,8 @@ export function Footer() {
               </li>
               <li className="flex items-center gap-2.5">
                 <MessageCircle className="w-4 h-4 text-gold-deep flex-shrink-0" />
-                <a href="https://wa.me/923111234567" target="_blank" rel="noopener noreferrer" className="hover:text-gold-deep transition-colors">
-                  +92 311 1234567
+                <a href={SOCIAL.whatsapp} target="_blank" rel="noopener noreferrer" className="hover:text-gold-deep transition-colors">
+                  {WHATSAPP_DISPLAY}
                 </a>
               </li>
               <li className="flex items-center gap-2.5">

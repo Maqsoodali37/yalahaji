@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
+import { AdminSessionService } from '../auth/admin-session.service'
 import { UpdateProfileDto } from './dto/update-profile.dto'
 import { CreateAddressDto } from './dto/create-address.dto'
 import { Prisma } from '@prisma/client'
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sessions: AdminSessionService,
+  ) {}
 
   async findById(id: string) {
     const user = await this.prisma.user.findUnique({
@@ -102,6 +106,18 @@ export class UsersService {
   async toggleActive(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } })
     if (!user) throw new NotFoundException('User not found.')
-    return this.prisma.user.update({ where: { id }, data: { isActive: !user.isActive } })
+
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: { isActive: !user.isActive },
+    })
+
+    // Deactivating must take effect immediately — otherwise a disabled staff
+    // member keeps working until their token expires.
+    if (!updated.isActive) {
+      await this.sessions.revokeAllForUser(id)
+    }
+
+    return updated
   }
 }

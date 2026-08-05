@@ -1,10 +1,11 @@
 import { Controller, Get, Post, Patch, Param, Body, Query, Request, UseGuards } from '@nestjs/common'
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger'
+import { ApiTags, ApiBearerAuth, ApiCookieAuth, ApiOperation } from '@nestjs/swagger'
 import { OrderStatus } from '@prisma/client'
 import { OrdersService } from './orders.service'
 import { CreateOrderDto } from './dto/create-order.dto'
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
+import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard'
 import { RolesGuard } from '../auth/roles.guard'
 import { Roles, STAFF_ORDERS } from '../auth/roles.decorator'
 import { CurrentUser } from '../auth/current-user.decorator'
@@ -34,9 +35,9 @@ export class OrdersController {
   }
 
   @Get('admin')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
   @Roles(...STAFF_ORDERS)
-  @ApiBearerAuth()
+  @ApiCookieAuth()
   @ApiOperation({ summary: 'Admin: all orders' })
   findAll(
     @Query('page') page = '1',
@@ -48,18 +49,18 @@ export class OrdersController {
   }
 
   @Get('admin/stats')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
   @Roles(...STAFF_ORDERS)
-  @ApiBearerAuth()
+  @ApiCookieAuth()
   @ApiOperation({ summary: 'Admin: revenue and order KPIs' })
   adminStats(@Query('days') days = '30') {
     return this.ordersService.adminStats(+days)
   }
 
   @Get('admin/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
   @Roles(...STAFF_ORDERS)
-  @ApiBearerAuth()
+  @ApiCookieAuth()
   @ApiOperation({ summary: 'Admin: get order by id' })
   findOneAdmin(@Param('id') id: string) {
     return this.ordersService.findByIdAdmin(id)
@@ -80,9 +81,9 @@ export class OrdersController {
   }
 
   @Patch(':id/status')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
   @Roles(...STAFF_ORDERS)
-  @ApiBearerAuth()
+  @ApiCookieAuth()
   @ApiOperation({ summary: 'Admin: update order status' })
   updateStatus(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto) {
     return this.ordersService.updateStatus(id, dto)

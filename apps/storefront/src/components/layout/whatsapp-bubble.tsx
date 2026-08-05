@@ -1,14 +1,14 @@
 'use client'
 
 import { MessageCircle } from 'lucide-react'
+import { WHATSAPP_NUMBER } from '@/lib/seo'
 
-const WA_NUMBER = '923111234567'
 const WA_MESSAGE = encodeURIComponent('As-salamu alaykum! I have a question about my order.')
 
 export function WhatsAppBubble() {
   return (
     <a
-      href={`https://wa.me/${WA_NUMBER}?text=${WA_MESSAGE}`}
+      href={`https://wa.me/${WHATSAPP_NUMBER}?text=${WA_MESSAGE}`}
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Chat on WhatsApp"

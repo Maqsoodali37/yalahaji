@@ -6,8 +6,10 @@ export const ROLES_KEY = 'roles'
 
 /**
  * Restrict a route to one or more roles.
- * Must be combined with JwtAuthGuard + RolesGuard, e.g.
- *   @UseGuards(JwtAuthGuard, RolesGuard)
+ *
+ * Staff routes MUST pair this with AdminJwtAuthGuard, never JwtAuthGuard —
+ * the latter accepts customer bearer tokens:
+ *   @UseGuards(AdminJwtAuthGuard, RolesGuard)
  *   @Roles('admin', 'manager')
  */
 export const Roles = (...roles: AppRole[]) => SetMetadata(ROLES_KEY, roles)

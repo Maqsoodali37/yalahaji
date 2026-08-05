@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common'
+import { Throttle } from '@nestjs/throttler'
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger'
 import { AuthService } from './auth.service'
 import { RegisterDto } from './dto/register.dto'
@@ -17,6 +18,8 @@ export class AuthController {
   }
 
   @Post('login')
+  // Shares a password hash with staff accounts, so it needs a real limit too.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto)
   }

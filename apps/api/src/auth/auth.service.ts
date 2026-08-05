@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt'
 import { ConfigService } from '@nestjs/config'
 import * as bcrypt from 'bcryptjs'
 import { PrismaService } from '../prisma/prisma.service'
+import { LoginAttemptService } from './login-attempt.service'
 import { RegisterDto } from './dto/register.dto'
 import { LoginDto } from './dto/login.dto'
 
@@ -12,6 +13,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly attempts: LoginAttemptService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -35,11 +37,30 @@ export class AuthService {
         isActive: true,
       },
     })
-    if (!user || !user.passwordHash) throw new UnauthorizedException('Invalid credentials.')
+
+    const invalid = () => new UnauthorizedException('Invalid credentials.')
+
+    if (!user || !user.passwordHash) {
+      await this.attempts.equaliseTiming(dto.password)
+      throw invalid()
+    }
+
+    // Staff and customers share one password hash, so the lockout MUST be
+    // enforced here too. Without it, an attacker brute-forces a staff
+    // password through this endpoint and then presents it once to the
+    // admin login, never tripping the admin lockout.
+    if (this.attempts.isLocked(user)) {
+      await this.attempts.equaliseTiming(dto.password)
+      throw invalid()
+    }
 
     const valid = await bcrypt.compare(dto.password, user.passwordHash)
-    if (!valid) throw new UnauthorizedException('Invalid credentials.')
+    if (!valid) {
+      await this.attempts.registerFailure(user.id, user.failedLoginAttempts)
+      throw invalid()
+    }
 
+    await this.attempts.registerSuccess(user.id)
     return this.signToken(user.id, user.phone, user.role)
   }
 

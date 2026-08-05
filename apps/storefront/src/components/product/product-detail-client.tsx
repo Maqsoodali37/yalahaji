@@ -15,6 +15,7 @@ import { useWishlistStore } from '@/store/wishlist'
 import {
   formatPrice, formatDiscount, getTierBadgeClass, getTierTextClass, cn
 } from '@/lib/utils'
+import { SOCIAL } from '@/lib/seo'
 import { ProductCard } from '@/components/shop/product-card'
 
 interface Props {
@@ -488,7 +489,7 @@ export function ProductDetailClient({ product, reviews, relatedProducts }: Props
                 Share
               </button>
               <a
-                href={`https://wa.me/923111234567?text=I'm%20interested%20in%20${encodeURIComponent(product.name.en)}`}
+                href={`${SOCIAL.whatsapp}?text=I'm%20interested%20in%20${encodeURIComponent(product.name.en)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1.5 hover:text-[#25D366] transition-colors"

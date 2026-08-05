@@ -70,7 +70,7 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
                 <p className="text-[11px] text-ink-3 truncate">{user?.phone}</p>
               </div>
               <button
-                onClick={logout}
+                onClick={() => void logout()}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-alert hover:bg-red-50"
                 role="menuitem"
               >

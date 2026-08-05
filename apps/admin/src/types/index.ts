@@ -24,21 +24,24 @@ export type PaymentStatus = 'unpaid' | 'paid' | 'partially_refunded' | 'refunded
 
 export type ShippingMethod = 'standard' | 'express' | 'pickup'
 
-export interface AuthUser {
+/**
+ * Staff profile returned by /auth/admin/login and /auth/admin/me.
+ * There is no token field — the session is an httpOnly cookie.
+ */
+export interface AdminProfile {
   id: string
   name: string
   email: string | null
   phone: string
   role: Role
-  loyaltyPoints: number
   avatar: string | null
-  createdAt: string
+  lastLoginAt?: string | null
+  createdAt?: string
 }
 
-/** POST /auth/login response — the user must be fetched separately via /auth/me. */
-export interface LoginResponse {
-  access_token: string
-  token_type: string
+export interface AdminLoginResponse {
+  user: AdminProfile
+  expiresAt: string
 }
 
 export interface Paginated<T> {

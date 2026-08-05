@@ -16,7 +16,7 @@ services:
     container_name: yalahaji-mysql
     restart: unless-stopped
     ports:
-      - "${MYSQL_HOST_PORT:-3306}:3306"
+      - "${MYSQL_HOST_PORT:-3306}:${MYSQL_PORT:-3306}"
     command: --default-authentication-plugin=mysql_native_password
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
@@ -41,7 +41,7 @@ services:
     container_name: yalahaji-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_HOST_PORT:-6379}:${REDIS_PORT:-6379}"
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis-data:/data
@@ -59,31 +59,31 @@ services:
     container_name: yalahaji-meili
     restart: unless-stopped
     ports:
-      - "7700:7700"
+      - "${MEILI_HOST_PORT:-7700}:${MEILI_PORT:-7700}"
     environment:
       MEILI_MASTER_KEY:   ${MEILI_MASTER_KEY}
-      MEILI_ENV:          development
+      MEILI_ENV:          ${MEILI_ENV:-development}
       MEILI_NO_ANALYTICS: "true"
     volumes:
       - meili-data:/meili_data
     networks:
       - yalahaji-net
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7700/health || curl -sf http://localhost:7700/health || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:${MEILI_PORT:-7700}/health || curl -sf http://localhost:${MEILI_PORT:-7700}/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 15s
 
-  # ── MinIO — API :9000 · Console :9001 ─────────────────────────────────────────
+  # ── MinIO — API · Console ─────────────────────────────────────────────────────
   minio:
     image: minio/minio:latest
     container_name: yalahaji-minio
     restart: unless-stopped
     ports:
-      - "9000:9000"
-      - "9001:9001"
-    command: server /data --console-address ":9001"
+      - "${MINIO_HOST_PORT:-9000}:${MINIO_PORT:-9000}"
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:${MINIO_CONSOLE_PORT:-9001}"
+    command: server /data --console-address ":${MINIO_CONSOLE_PORT:-9001}"
     environment:
       MINIO_ROOT_USER:     ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -98,7 +98,7 @@ services:
       retries: 5
       start_period: 15s
 
-  # ── NestJS API :4000 ──────────────────────────────────────────────────────────
+  # ── NestJS API ────────────────────────────────────────────────────────────────
   api:
     build:
       context: ./apps/api
@@ -106,26 +106,31 @@ services:
     container_name: yalahaji-api
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      - "${API_HOST_PORT:-4000}:${API_PORT:-4000}"
     env_file: .env
     environment:
-      NODE_ENV:            production
-      PORT:                4000
-      REDIS_HOST:          redis
-      REDIS_PORT:          6379
-      MEILISEARCH_URL:     http://meilisearch:7700
+      NODE_ENV:            ${NODE_ENV:-production}
+      PORT:                ${API_PORT:-4000}
+      SWAGGER_ENABLED:     ${SWAGGER_ENABLED:-false}
+      REDIS_HOST:          ${REDIS_HOST:-redis}
+      REDIS_PORT:          ${REDIS_PORT:-6379}
+      MEILISEARCH_URL:     ${MEILISEARCH_URL:-http://meilisearch:7700}
       MEILISEARCH_KEY:     ${MEILI_MASTER_KEY}
-      MINIO_ENDPOINT:      minio
-      MINIO_PORT:          9000
-      MINIO_USE_SSL:       "false"
+      MINIO_ENDPOINT:      ${MINIO_ENDPOINT:-minio}
+      MINIO_PORT:          ${MINIO_PORT:-9000}
+      MINIO_USE_SSL:       ${MINIO_USE_SSL:-false}
       MINIO_ACCESS_KEY:    ${MINIO_ROOT_USER}
       MINIO_SECRET_KEY:    ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET:        ${MINIO_BUCKET}
-      MINIO_PUBLIC_URL:    http://localhost:9000/${MINIO_BUCKET}
+      MINIO_PUBLIC_URL:    ${MINIO_PUBLIC_URL}
       JWT_SECRET:          ${JWT_SECRET}
-      JWT_EXPIRES_IN:      7d
-      STOREFRONT_URL:      http://localhost:3000
-      ADMIN_URL:           http://localhost:3001
+      JWT_EXPIRES_IN:      ${JWT_EXPIRES_IN:-7d}
+      # Admin auth is a separate trust domain — its own secret, short TTL.
+      ADMIN_JWT_SECRET:    ${ADMIN_JWT_SECRET}
+      ADMIN_JWT_EXPIRES_IN: ${ADMIN_JWT_EXPIRES_IN:-8h}
+      COOKIE_DOMAIN:       ${COOKIE_DOMAIN:-}
+      STOREFRONT_URL:      ${STOREFRONT_URL}
+      ADMIN_URL:           ${ADMIN_URL}
     depends_on:
       mysql:
         condition: service_healthy
@@ -140,26 +145,33 @@ services:
     healthcheck:
       # Use 127.0.0.1 — busybox wget resolves "localhost" to ::1 (IPv6) first,
       # but Fastify binds to 0.0.0.0 (IPv4), which refuses the connection.
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/api/v1/health"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:${API_PORT:-4000}/api/v1/health || exit 1"]
       interval: 15s
       timeout: 5s
       start_period: 120s
       retries: 10
 
-  # ── Next.js Storefront :3000 ──────────────────────────────────────────────────
+  # ── Next.js Storefront ────────────────────────────────────────────────────────
   storefront:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* are inlined at BUILD time — must be passed as build args.
+        NEXT_PUBLIC_API_URL:         ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_SITE_URL:        ${NEXT_PUBLIC_SITE_URL}
+        NEXT_PUBLIC_WHATSAPP_NUMBER: ${NEXT_PUBLIC_WHATSAPP_NUMBER}
+        NEXT_PUBLIC_FACEBOOK_APP_ID: ${NEXT_PUBLIC_FACEBOOK_APP_ID:-}
+        PORT:                        ${STOREFRONT_PORT:-3000}
     container_name: yalahaji-storefront
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${STOREFRONT_HOST_PORT:-3000}:${STOREFRONT_PORT:-3000}"
     environment:
-      NODE_ENV:                    production
-      PORT:                        3000
-      NEXT_PUBLIC_API_URL:         http://localhost:4000/api/v1
-      NEXT_PUBLIC_SITE_URL:        http://localhost:3000
+      NODE_ENV:                    ${NODE_ENV:-production}
+      PORT:                        ${STOREFRONT_PORT:-3000}
+      NEXT_PUBLIC_API_URL:         ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_SITE_URL:        ${NEXT_PUBLIC_SITE_URL}
       NEXT_PUBLIC_WHATSAPP_NUMBER: ${NEXT_PUBLIC_WHATSAPP_NUMBER}
     depends_on:
       api:
@@ -167,32 +179,37 @@ services:
     networks:
       - yalahaji-net
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:${STOREFRONT_PORT:-3000}/ || exit 1"]
       interval: 30s
       timeout: 5s
       start_period: 20s
       retries: 3
 
-  # ── Next.js Admin :3001 ───────────────────────────────────────────────────────
+  # ── Next.js Admin ─────────────────────────────────────────────────────────────
   admin:
     build:
       context: .
       dockerfile: Dockerfile.admin
+      args:
+        NEXT_PUBLIC_ADMIN_API_URL:  ${NEXT_PUBLIC_ADMIN_API_URL}
+        NEXT_PUBLIC_STOREFRONT_URL: ${NEXT_PUBLIC_SITE_URL}
+        PORT:                       ${ADMIN_PORT:-3001}
     container_name: yalahaji-admin
     restart: unless-stopped
     ports:
-      - "3001:3001"
+      - "${ADMIN_HOST_PORT:-3001}:${ADMIN_PORT:-3001}"
     environment:
-      NODE_ENV:                    production
-      PORT:                        3001
-      NEXT_PUBLIC_ADMIN_API_URL:   http://localhost:4000/api/v1
+      NODE_ENV:                   ${NODE_ENV:-production}
+      PORT:                       ${ADMIN_PORT:-3001}
+      NEXT_PUBLIC_ADMIN_API_URL:  ${NEXT_PUBLIC_ADMIN_API_URL}
+      NEXT_PUBLIC_STOREFRONT_URL: ${NEXT_PUBLIC_SITE_URL}
     depends_on:
       api:
         condition: service_healthy
     networks:
       - yalahaji-net
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:${ADMIN_PORT:-3001}/ || exit 1"]
       interval: 30s
       timeout: 5s
       start_period: 20s

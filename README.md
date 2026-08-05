@@ -113,7 +113,7 @@ Built under `apps/api/` — NestJS 10 with Fastify adapter, Prisma 5 ORM, MySQL 
 - `apps/api/src/main.ts` — Fastify adapter, global `/api` prefix, URI versioning (v1), `ValidationPipe`, CORS, Swagger at `/api/docs`
 - `apps/api/src/app.module.ts` — ConfigModule, ThrottlerModule (120 req/60s), all feature modules imported
 - `apps/api/src/prisma/` — global PrismaService + PrismaModule
-- `apps/api/.env.example` — all required env vars documented
+- `.env.example` (repo root) — the single env file for every app; all required vars documented
 - `apps/api/prisma/seed.ts` — admin user, 6 categories, 3 products (ihram, oud, full kit), 4 coupons, 5 settings
 
 **Prisma Schema** (`apps/api/prisma/schema.prisma`)
@@ -147,19 +147,50 @@ Key decisions: prices stored as `Int` in paisas (×100), multilingual fields (na
 Next 15 + Tailwind + TanStack Query, on port **3001**. Shares the storefront's
 brand tokens. Full spec in sections 9–12 of `01-features-spec.md`.
 
+Environment comes from the single `.env` at the repo root — there is no
+per-app env file.
+
 ```bash
+cp .env.example .env      # once, at the repo root
 cd apps/admin
-cp .env.example .env.local
 npm install
 npm run dev          # http://localhost:3001
 ```
 
-### Access control
+### Access control — separate from the storefront
+
+The admin panel is its own trust domain. A customer token cannot reach a staff
+route under any circumstance, because it fails on three independent counts:
+
+| | Customer | Admin |
+|---|---|---|
+| Endpoint | `POST /auth/login` | `POST /auth/admin/login` |
+| Transport | `Authorization: Bearer` | httpOnly cookie `yh_admin_session` |
+| Secret | `JWT_SECRET` | `ADMIN_JWT_SECRET` (must differ — enforced at boot) |
+| Audience claim | none | `yalahaji:admin` |
+| Lifetime | 7 days | 8 hours |
+| Revocable | no | yes — `sessions` table |
+| Guard | `JwtAuthGuard` | `AdminJwtAuthGuard` |
+
+The admin strategy reads the token **only** from the cookie — there is no
+bearer fallback — so JavaScript cannot read it and an XSS bug on the dashboard
+cannot exfiltrate a session.
+
+Every request re-reads the user, so deactivating an account or changing its
+role takes effect immediately rather than when the token expires. Deactivating
+a user also revokes all of their sessions.
 
 Sign-in is restricted to staff roles (`admin`, `manager`, `support`,
-`fulfillment`); `customer` accounts are rejected at login. Navigation and
-pages are filtered by role, and the API enforces the same rules via
-`RolesGuard` — the UI checks are for UX only.
+`fulfillment`). Navigation and pages are filtered by role, and the API enforces
+the same rules via `RolesGuard` — the UI checks are for UX only.
+
+**Brute-force protection:** 5 login attempts per minute per IP (throttler),
+plus a 15-minute account lockout after 5 failed attempts. The lockout is
+enforced on **both** login endpoints — staff and customers share one password
+hash, so guarding only the admin door would leave the same credential
+brute-forceable through the storefront. All failure modes return an identical
+401 with matched timing, so the endpoint cannot be used to enumerate accounts
+or confirm passwords.
 
 | Area | Roles |
 |---|---|
@@ -171,7 +202,7 @@ pages are filtered by role, and the API enforces the same rules via
 
 | Section | Status | Notes |
 |---|---|---|
-| **Login** | Done | Token in `localStorage`, session restored via `GET /auth/me` |
+| **Login** | Done | httpOnly cookie, session restored via `GET /auth/admin/me`, sign-out revokes server-side |
 | **Dashboard** | Done | Revenue/orders/AOV KPIs, status breakdown, recent orders, low-stock list |
 | **Products** | Done | List with search + category/status filters, create/edit form (multilingual, SEO, tags), variant editor, archive |
 | **Orders** | Done | List with status filter + search, detail view with items/totals/timeline, guarded status transitions |
@@ -187,12 +218,35 @@ pages are filtered by role, and the API enforces the same rules via
 - Status transitions follow `nextStatuses()` in `src/lib/utils.ts` — the
   dropdown only offers legal next states.
 
+### Setup note
+
+`ADMIN_JWT_SECRET` must be set and **must differ from `JWT_SECRET`** — the API
+refuses to boot otherwise. Generate one with `openssl rand -base64 48`.
+In production also set `COOKIE_DOMAIN` (e.g. `.yalahaji.com`) so the admin
+subdomain can authenticate against the API subdomain.
+
 ### Still to do
 
 - Image upload UI (`POST /media/upload` exists and is staff-guarded)
 - Bulk CSV import/export for products
 - Packing slips and refunds on orders
 - The six stubbed sections above
+
+---
+
+## Open security issues (customer-facing, pre-existing)
+
+Found during the admin auth review. None are caused by the admin work, and
+none are exploitable today because the storefront isn't wired to the API yet —
+but they must be fixed before it is.
+
+| # | Severity | Issue |
+|---|---|---|
+| 1 | High | `GET /orders/track/:number` is public and returns full customer PII. Order numbers are sequential (`YH-2026-1001`, `1002`, …), so the whole order table can be walked. Needs an email/phone match or an opaque per-order token. |
+| 2 | High | `cart.controller.ts` has **no guards at all** and `UpsertCartDto` has no validator decorators — so `POST /cart` returns 400 for every request, and carts are keyed only on a client-supplied `x-session-id` (any caller can read or mutate any cart). |
+| 3 | Medium | `PATCH /users/me/addresses/:id` types its body as `Partial<CreateAddressDto>`, which `ValidationPipe` skips entirely — a customer can set `userId` and move their address onto another account. Use `PartialType()` instead. |
+| 4 | Medium | `GET /blog/:slug` has no `published` filter, so draft posts are publicly readable by slug. |
+| 5 | Low | `POST /orders` reads `req.user?.id` on an unguarded route, so authenticated orders are always recorded as guest orders. Order numbers are also generated by `count + 1001`, which will collide under concurrent checkout. |
 
 ---
 

@@ -72,7 +72,7 @@ export default function LoginPage() {
                 id="identifier"
                 name="identifier"
                 autoComplete="username"
-                placeholder="03001234567"
+                placeholder="+923001234567 or you@yalahaji.com"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 required

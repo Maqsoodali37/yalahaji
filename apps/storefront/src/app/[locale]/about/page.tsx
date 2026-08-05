@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getLocale } from 'next-intl/server'
+import { SOCIAL } from '@/lib/seo'
 import { ArrowRight, Package, ShieldCheck, Truck, MessageCircle } from 'lucide-react'
 import { PolicyPage, PolicySection, PolicyList } from '@/components/layout/policy-page'
 
@@ -129,7 +130,7 @@ export default async function AboutPage() {
           <p>Shop 5, Islam Market, Karachi, Pakistan</p>
           <p className="mt-2">
             WhatsApp:{' '}
-            <a href="https://wa.me/923111234567" className="text-green font-semibold hover:underline">
+            <a href={SOCIAL.whatsapp} className="text-green font-semibold hover:underline">
               +92 311 1234567
             </a>
           </p>

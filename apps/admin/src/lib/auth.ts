@@ -1,8 +1,8 @@
 'use client'
 
 import { create } from 'zustand'
-import { api, clearToken, setToken, getToken, ApiError } from './api'
-import type { AuthUser, LoginResponse, Role } from '@/types'
+import { api, ApiError } from './api'
+import type { AdminProfile, Role } from '@/types'
 
 /** Roles permitted to sign in to the admin dashboard at all. */
 export const STAFF_ROLES: Role[] = ['admin', 'manager', 'support', 'fulfillment']
@@ -19,15 +19,19 @@ export function canManage(role?: Role | null): boolean {
 }
 
 interface AuthState {
-  user: AuthUser | null
+  user: AdminProfile | null
   status: 'idle' | 'loading' | 'authenticated' | 'unauthenticated'
   error: string | null
   login: (identifier: string, password: string) => Promise<void>
-  logout: () => void
-  /** Restore session from a stored token on app boot. */
+  logout: () => Promise<void>
+  /** Restore the session from the httpOnly cookie on app boot. */
   hydrate: () => Promise<void>
 }
 
+/**
+ * The session lives entirely in an httpOnly cookie, so there is nothing to
+ * persist here — on reload we simply ask the API who we are.
+ */
 export const useAuth = create<AuthState>((set) => ({
   user: null,
   status: 'idle',
@@ -36,60 +40,42 @@ export const useAuth = create<AuthState>((set) => ({
   login: async (identifier, password) => {
     set({ status: 'loading', error: null })
     try {
-      const res = await api.post<LoginResponse>(
-        '/auth/login',
-        { identifier, password },
-        { anonymous: true },
-      )
-
-      // The login endpoint returns only a token; the profile comes from /auth/me.
-      setToken(res.access_token)
-      const user = await api.get<AuthUser>('/auth/me')
-
-      if (!isStaff(user.role)) {
-        clearToken()
-        set({
-          status: 'unauthenticated',
-          user: null,
-          error: 'This account does not have dashboard access.',
-        })
-        return
-      }
-
+      const { user } = await api.post<{ user: AdminProfile }>('/auth/admin/login', {
+        identifier,
+        password,
+      })
       set({ user, status: 'authenticated', error: null })
     } catch (err) {
-      clearToken()
-      const message =
-        err instanceof ApiError
-          ? err.status === 401
-            ? 'Incorrect phone/email or password.'
-            : err.message
-          : 'Could not reach the server. Check your connection.'
+      let message = 'Could not reach the server. Check your connection.'
+
+      if (err instanceof ApiError) {
+        if (err.status === 401) {
+          // The API returns a deliberately uniform message so we can't leak
+          // whether the account exists or is staff.
+          message = 'Incorrect phone/email or password.'
+        } else if (err.isThrottled) {
+          message = 'Too many attempts. Wait a minute and try again.'
+        } else {
+          message = err.message
+        }
+      }
+
       set({ status: 'unauthenticated', user: null, error: message })
     }
   },
 
-  logout: () => {
-    clearToken()
+  logout: async () => {
+    // Clearing the cookie is the server's job.
+    await api.post('/auth/admin/logout').catch(() => undefined)
     set({ user: null, status: 'unauthenticated', error: null })
   },
 
   hydrate: async () => {
-    if (!getToken()) {
-      set({ status: 'unauthenticated', user: null })
-      return
-    }
     set({ status: 'loading' })
     try {
-      const user = await api.get<AuthUser>('/auth/me')
-      if (!isStaff(user.role)) {
-        clearToken()
-        set({ status: 'unauthenticated', user: null, error: 'Dashboard access revoked.' })
-        return
-      }
+      const user = await api.get<AdminProfile>('/auth/admin/me')
       set({ user, status: 'authenticated', error: null })
     } catch {
-      clearToken()
       set({ status: 'unauthenticated', user: null })
     }
   },

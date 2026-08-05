@@ -1,13 +1,14 @@
 // ─────────────────────────────────────────────────────────────
-// Typed fetch client for the Yala Haji API.
-// Attaches the bearer token, normalises Nest error shapes, and
-// signals 401/403 so the auth layer can react.
+// Typed fetch client for the Yala Haji admin API.
+//
+// Authentication is an httpOnly cookie set by POST /auth/admin/login.
+// There is deliberately NO token handling in this file: the browser
+// attaches the cookie, and JavaScript cannot read it — so an XSS bug
+// on the dashboard cannot exfiltrate a session.
 // ─────────────────────────────────────────────────────────────
 
 export const API_URL =
   process.env.NEXT_PUBLIC_ADMIN_API_URL ?? 'http://localhost:4000/api/v1'
-
-export const TOKEN_KEY = 'yh_admin_token'
 
 export class ApiError extends Error {
   status: number
@@ -27,21 +28,11 @@ export class ApiError extends Error {
   get isForbidden() {
     return this.status === 403
   }
-}
 
-export function getToken(): string | null {
-  if (typeof window === 'undefined') return null
-  return window.localStorage.getItem(TOKEN_KEY)
-}
-
-export function setToken(token: string) {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(TOKEN_KEY, token)
-}
-
-export function clearToken() {
-  if (typeof window === 'undefined') return
-  window.localStorage.removeItem(TOKEN_KEY)
+  /** Rate limited or temporarily locked out. */
+  get isThrottled() {
+    return this.status === 429
+  }
 }
 
 type QueryValue = string | number | boolean | undefined | null
@@ -58,8 +49,6 @@ export function buildQuery(params: Record<string, QueryValue>): string {
 
 interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown
-  /** Skip attaching the bearer token (e.g. login). */
-  anonymous?: boolean
 }
 
 /** Nest returns `message` as string | string[]; flatten it. */
@@ -76,15 +65,15 @@ export async function apiFetch<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { body, anonymous, headers, ...rest } = options
-
-  const token = anonymous ? null : getToken()
+  const { body, headers, ...rest } = options
 
   const res = await fetch(`${API_URL}${path}`, {
     ...rest,
+    // Sends and receives the admin session cookie. Requires the API to
+    // allowlist this origin with `credentials: true`.
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
@@ -130,19 +119,18 @@ export const api = {
     apiFetch<T>(path, { ...options, method: 'DELETE' }),
 }
 
-/** Multipart upload — used by the media picker. Content-Type is set by the browser. */
+/** Multipart upload — Content-Type is set by the browser, not by us. */
 export async function uploadFile(
   file: File,
   folder = 'products',
 ): Promise<{ url: string }> {
-  const token = getToken()
   const form = new FormData()
   form.append('folder', folder)
   form.append('file', file)
 
   const res = await fetch(`${API_URL}/media/upload`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    credentials: 'include',
     body: form,
   })
 

@@ -105,6 +105,12 @@ model User {
   isActive       Boolean   @default(true)
   loyaltyPoints  Int       @default(0)
   avatar         String?
+
+  // Brute-force protection (staff logins)
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
+
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -121,19 +127,23 @@ model User {
   @@map("users")
 }
 
+/// Revocable admin sessions. `tokenHash` is a SHA-256 of the issued JWT —
+/// the raw token is never stored, so a database leak yields nothing usable.
 model Session {
   id        String   @id @default(uuid())
   userId    String
-  token     String   @unique @db.VarChar(512)
+  tokenHash String   @unique @db.VarChar(64)
   userAgent String?
   ip        String?
   expiresAt DateTime
+  revokedAt DateTime?
   createdAt DateTime @default(now())
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@index([token])
+  @@index([tokenHash])
+  @@index([expiresAt])
   @@map("sessions")
 }
 

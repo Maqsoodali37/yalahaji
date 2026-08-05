@@ -83,22 +83,16 @@ export function Header() {
               )}
             </div>
 
-            {/* Actions */}
+            {/* Actions
+                Search, wishlist, cart and account are deliberately md-only:
+                below md the MobileBottomBar already provides all four, and
+                duplicating them here just crowded the 72px header row. */}
             <div className="flex items-center gap-1 ms-auto">
-              {/* Mobile search */}
-              <button
-                onClick={() => setSearchOpen(true)}
-                className="md:hidden btn-ghost p-2.5"
-                aria-label="Search"
-              >
-                <Search className="w-5 h-5" />
-              </button>
-
               {/* Compare */}
               {compareCount > 0 && (
                 <Link
                   href={`/${locale}/compare`}
-                  className="hidden sm:flex btn-ghost p-2.5 relative"
+                  className="hidden md:flex btn-ghost p-2.5 relative"
                   aria-label="Compare"
                 >
                   <BarChart2 className="w-5 h-5" />
@@ -111,7 +105,7 @@ export function Header() {
               {/* Wishlist */}
               <Link
                 href={`/${locale}/account/wishlist`}
-                className="btn-ghost p-2.5 relative"
+                className="hidden md:flex btn-ghost p-2.5 relative"
                 aria-label="Wishlist"
               >
                 <Heart className="w-5 h-5" />
@@ -125,7 +119,7 @@ export function Header() {
               {/* Account */}
               <Link
                 href={`/${locale}/account`}
-                className="hidden sm:flex btn-ghost p-2.5"
+                className="hidden md:flex btn-ghost p-2.5"
                 aria-label="Account"
               >
                 <User className="w-5 h-5" />
@@ -137,11 +131,11 @@ export function Header() {
               {/* Cart */}
               <button
                 onClick={openCart}
-                className="relative flex items-center gap-2 bg-green text-white rounded-sm px-3 py-2 text-sm font-semibold hover:bg-green-mid transition-colors"
+                className="relative hidden md:flex items-center gap-2 bg-green text-white rounded-sm px-3 py-2 text-sm font-semibold hover:bg-green-mid transition-colors"
                 aria-label="Cart"
               >
                 <ShoppingCart className="w-4 h-4" />
-                <span className="hidden sm:inline">{t('cart')}</span>
+                <span>{t('cart')}</span>
                 {itemCount > 0 && (
                   <span className="bg-gold text-ink text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
                     {itemCount}
@@ -228,13 +222,6 @@ export function Header() {
           </div>
         )}
       </header>
-
-      {/* Mobile search overlay */}
-      {searchOpen && (
-        <div className="md:hidden fixed inset-0 z-50 bg-white">
-          <SearchDropdown onClose={() => setSearchOpen(false)} fullscreen />
-        </div>
-      )}
     </>
   )
 }
