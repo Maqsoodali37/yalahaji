@@ -1,5 +1,3 @@
-version: "3.9"
-
 networks:
   yalahaji-net:
     driver: bridge
@@ -113,7 +111,6 @@ services:
     environment:
       NODE_ENV:            production
       PORT:                4000
-      DATABASE_URL:        mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
       REDIS_HOST:          redis
       REDIS_PORT:          6379
       MEILISEARCH_URL:     http://meilisearch:7700
