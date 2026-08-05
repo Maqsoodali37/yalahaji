@@ -5,6 +5,33 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, UserPlus, Loader2 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
+import {
+  validate,
+  hasErrors,
+  required,
+  minLength,
+  maxLength,
+  phone as phoneRule,
+  email as emailRule,
+  password as passwordRule,
+  type FieldErrors,
+} from '@/lib/validation'
+import { FormField, inputClass } from '@/components/ui/form-field'
+
+interface RegisterValues {
+  name: string
+  phone: string
+  email: string
+  password: string
+}
+
+/** Mirrors the API's RegisterDto so a rejection here is never a surprise. */
+const registerRules = {
+  name: [required('Enter your full name.'), minLength(2), maxLength(120)],
+  phone: [required('A phone number is required.'), phoneRule()],
+  email: [emailRule()],
+  password: [required('Choose a password.'), passwordRule(8)],
+}
 
 export function RegisterForm({ locale }: { locale: string }) {
   const router = useRouter()
@@ -15,74 +42,126 @@ export function RegisterForm({ locale }: { locale: string }) {
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [errors, setErrors] = useState<FieldErrors<RegisterValues>>({})
+  const [submitted, setSubmitted] = useState(false)
+
+  const values: RegisterValues = { name, phone, email, password }
+
+  const revalidate = (next: RegisterValues) => {
+    if (submitted) setErrors(validate(next, registerRules))
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const ok = await register(name, phone, email, password)
+    setSubmitted(true)
+
+    const found = validate(values, registerRules)
+    setErrors(found)
+    if (hasErrors(found)) return
+
+    const ok = await register(name.trim(), phone, email.trim(), password)
     if (ok) router.push(`/${locale}/account`)
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white border border-line rounded-md p-6 shadow-sm space-y-4">
+    <form
+      onSubmit={handleSubmit}
+      noValidate
+      className="bg-white border border-line rounded-md p-6 shadow-sm space-y-4"
+    >
       <div className="grid sm:grid-cols-2 gap-4">
-        <div>
-          <label className="text-xs font-semibold text-stone uppercase tracking-wider mb-1 block">Full Name *</label>
-          <input
-            value={name}
-            onChange={(e) => { setName(e.target.value); clearError() }}
-            className="input-base"
-            placeholder="Muhammad Ali"
-            required
-          />
-        </div>
-        <div>
-          <label className="text-xs font-semibold text-stone uppercase tracking-wider mb-1 block">Phone *</label>
-          <input
-            type="tel"
-            value={phone}
-            onChange={(e) => { setPhone(e.target.value); clearError() }}
-            className="input-base"
-            placeholder="+92 300 1234567"
-            required
-          />
-        </div>
+        <FormField label="Full Name" required error={errors.name}>
+          {(props) => (
+            <input
+              {...props}
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value)
+                clearError()
+                revalidate({ ...values, name: e.target.value })
+              }}
+              className={inputClass(errors.name)}
+              placeholder="Muhammad Ali"
+              autoComplete="name"
+            />
+          )}
+        </FormField>
+
+        <FormField
+          label="Phone"
+          required
+          error={errors.phone}
+          hint="You’ll sign in with this number."
+        >
+          {(props) => (
+            <input
+              {...props}
+              type="tel"
+              inputMode="tel"
+              value={phone}
+              onChange={(e) => {
+                setPhone(e.target.value)
+                clearError()
+                revalidate({ ...values, phone: e.target.value })
+              }}
+              className={inputClass(errors.phone)}
+              placeholder="+92 300 1234567"
+              autoComplete="tel"
+            />
+          )}
+        </FormField>
       </div>
 
-      <div>
-        <label className="text-xs font-semibold text-stone uppercase tracking-wider mb-1 block">Email (optional)</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="input-base"
-          placeholder="ali@example.com"
-        />
-      </div>
-
-      <div>
-        <label className="text-xs font-semibold text-stone uppercase tracking-wider mb-1 block">Password *</label>
-        <div className="relative">
+      <FormField label="Email (optional)" error={errors.email}>
+        {(props) => (
           <input
-            type={showPassword ? 'text' : 'password'}
-            value={password}
-            onChange={(e) => { setPassword(e.target.value); clearError() }}
-            className="input-base pe-10"
-            placeholder="Min. 8 characters"
-            minLength={8}
-            required
+            {...props}
+            type="email"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value)
+              clearError()
+              revalidate({ ...values, email: e.target.value })
+            }}
+            className={inputClass(errors.email)}
+            placeholder="ali@example.com"
+            autoComplete="email"
           />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute end-3 top-1/2 -translate-y-1/2 text-stone hover:text-ink"
-          >
-            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
-        </div>
-      </div>
+        )}
+      </FormField>
+
+      <FormField label="Password" required error={errors.password}>
+        {(props) => (
+          <div className="relative">
+            <input
+              {...props}
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value)
+                clearError()
+                revalidate({ ...values, password: e.target.value })
+              }}
+              className={inputClass(errors.password, 'pe-10')}
+              placeholder="Min. 8 characters"
+              autoComplete="new-password"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              className="absolute end-3 top-1/2 -translate-y-1/2 text-stone hover:text-ink"
+            >
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        )}
+      </FormField>
 
       {error && (
-        <p className="text-xs text-alert font-medium">{error}</p>
+        <p role="alert" className="text-xs text-alert font-medium">
+          {error}
+        </p>
       )}
 
       <p className="text-xs text-stone">
@@ -102,17 +181,8 @@ export function RegisterForm({ locale }: { locale: string }) {
         {isLoading ? 'Creating account…' : 'Create Account'}
       </button>
 
-      <div className="relative text-center">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-line" />
-        </div>
-        <span className="relative bg-white px-3 text-xs text-stone">or</span>
-      </div>
-
-      <button type="button" className="btn-outline w-full justify-center py-2.5 gap-2">
-        <span className="text-lg">📱</span>
-        Register with WhatsApp OTP
-      </button>
+      {/* Removed here: a "Register with WhatsApp OTP" button with no handler.
+          Restore it alongside the OTP flow that implements it. */}
     </form>
   )
 }

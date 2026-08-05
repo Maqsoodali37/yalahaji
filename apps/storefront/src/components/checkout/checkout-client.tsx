@@ -9,6 +9,20 @@ import { useAuthStore } from '@/store/auth'
 import { placeOrder, ApiError } from '@/lib/api'
 import { formatPrice } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import {
+  addressRules,
+  hasErrors,
+  validate,
+  PROVINCES,
+  type AddressFormValues,
+  type FieldErrors,
+} from '@/lib/validation'
+import { FormField, inputClass } from '@/components/ui/form-field'
+import {
+  PAYMENT_OPTIONS,
+  DEFAULT_PAYMENT_METHOD,
+  isPaymentMethodEnabled,
+} from '@/lib/payment-methods'
 import type { Address, PaymentMethod, ShippingMethod } from '@/types'
 import {
   toAnalyticsItem,
@@ -26,15 +40,12 @@ const STEPS: { key: Step; label: string; icon: typeof Lock }[] = [
   { key: 'review', label: 'Review', icon: Lock },
 ]
 
-const PROVINCES = ['Punjab', 'Sindh', 'KPK', 'Balochistan', 'Azad Kashmir', 'Gilgit-Baltistan']
-
 /** GA4's shipping_tier — one option today, but the field is required. */
 const SHIPPING_TIER = 'Standard'
 
 export function CheckoutClient() {
   const locale = useLocale()
   const items = useCartStore((s) => s.items)
-  const subtotal = useCartStore((s) => s.subtotal())
   const couponDiscount = useCartStore((s) => s.couponDiscount)
   const couponCode = useCartStore((s) => s.couponCode)
   const clearCart = useCartStore((s) => s.clearCart)
@@ -58,9 +69,28 @@ export function CheckoutClient() {
     postalCode: '',
     isDefault: false,
   })
+
+  const [addressErrors, setAddressErrors] = useState<FieldErrors<AddressFormValues>>({})
+  // Errors appear on the first submit attempt, not while someone is still
+  // typing their name for the first time. After that the form validates live,
+  // so a correction clears the message immediately.
+  const [addressSubmitted, setAddressSubmitted] = useState(false)
+
+  /**
+   * One update path for every field, so validation can never be wired to some
+   * inputs and forgotten on others.
+   */
+  const setField = (field: keyof AddressFormValues, value: string) => {
+    const next = { ...address, [field]: value }
+    setAddress(next)
+    if (addressSubmitted) setAddressErrors(validate(next, addressRules))
+  }
   // Standard delivery is the only shipping method offered
   const shippingMethod: ShippingMethod = 'standard'
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('jazzcash')
+  // Defaults to cash on delivery. This used to default to `jazzcash`, which is
+  // no longer selectable — anyone clicking straight through the payment step
+  // would have submitted a method with no gateway behind it.
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(DEFAULT_PAYMENT_METHOD)
 
   // Shipping and total come from the store, which reads live settings — the
   // API recomputes both server-side anyway, so these are display-only.
@@ -85,8 +115,33 @@ export function CheckoutClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items.length])
 
+  /**
+   * Gate for leaving the address step. Returns false and surfaces every
+   * failing field at once — walking someone through errors one at a time is
+   * how a five-field form turns into five round trips.
+   */
+  const validateAddress = (): boolean => {
+    const errors = validate(address as AddressFormValues, addressRules)
+    setAddressErrors(errors)
+    setAddressSubmitted(true)
+
+    if (hasErrors(errors)) {
+      // Move focus to the problem so the message is not announced off-screen
+      // on a long form.
+      requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLElement>('[aria-invalid="true"]')
+          ?.focus({ preventScroll: false })
+      })
+      return false
+    }
+    return true
+  }
+
   /** Advances a step and emits the funnel event that belongs to leaving it. */
   const advanceTo = (next: Step) => {
+    if (next === 'payment' && !validateAddress()) return
+
     if (next === 'payment') {
       trackAddShippingInfo(items.map((i) => toAnalyticsItem(i)), {
         value: total,
@@ -104,6 +159,29 @@ export function CheckoutClient() {
   }
 
   const handlePlaceOrder = async () => {
+    // Re-check rather than trusting that the address step gated correctly.
+    // The step indicator lets people jump backwards, and an edit made there
+    // must not be able to reach the API unvalidated.
+    if (!validateAddress()) {
+      setStep('address')
+      return
+    }
+
+    if (items.length === 0) {
+      setPlaceError('Your basket is empty.')
+      return
+    }
+
+    // Belt and braces against a method that was selectable when the page
+    // loaded and is not now. The API rejects these too, but doing it here
+    // keeps the customer on the step where they can fix it.
+    if (!isPaymentMethodEnabled(paymentMethod)) {
+      setPaymentMethod(DEFAULT_PAYMENT_METHOD)
+      setPlaceError('That payment method isn’t available yet. Please choose another.')
+      setStep('payment')
+      return
+    }
+
     setPlacing(true)
     setPlaceError('')
 
@@ -191,6 +269,24 @@ export function CheckoutClient() {
     )
   }
 
+  // Checked after the success branch on purpose: placing an order empties the
+  // basket, so testing this first would swap the confirmation for an
+  // empty-basket notice the instant the order succeeded.
+  if (items.length === 0) {
+    return (
+      <div className="container-max py-20 text-center max-w-lg">
+        <div className="w-20 h-20 bg-paper border border-line rounded-full flex items-center justify-center mx-auto mb-6">
+          <ClipboardList className="w-9 h-9 text-stone" />
+        </div>
+        <h2 className="serif text-2xl text-ink mb-3">Your basket is empty</h2>
+        <p className="text-stone mb-8">Add something to your basket before checking out.</p>
+        <Link href={`/${locale}/shop`} className="btn-primary">
+          Browse the shop
+        </Link>
+      </div>
+    )
+  }
+
   return (
     <div className="bg-paper min-h-screen">
       <div className="container-max py-8">
@@ -243,78 +339,115 @@ export function CheckoutClient() {
                   <h2 className="font-bold text-ink text-lg">Delivery Address</h2>
 
                   <div className="grid sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-semibold text-stone uppercase tracking-wider mb-1 block">Full Name *</label>
-                      <input
-                        value={address.fullName}
-                        onChange={(e) => setAddress({ ...address, fullName: e.target.value })}
-                        className="input-base"
-                        placeholder="Muhammad Ali"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-stone uppercase tracking-wider mb-1 block">Phone *</label>
-                      <input
-                        value={address.phone}
-                        onChange={(e) => setAddress({ ...address, phone: e.target.value })}
-                        className="input-base"
-                        placeholder="+92 300 1234567"
-                        type="tel"
-                      />
-                    </div>
+                    <FormField label="Full Name" required error={addressErrors.fullName}>
+                      {(props) => (
+                        <input
+                          {...props}
+                          value={address.fullName}
+                          onChange={(e) => setField('fullName', e.target.value)}
+                          className={inputClass(addressErrors.fullName)}
+                          placeholder="Muhammad Ali"
+                          autoComplete="name"
+                        />
+                      )}
+                    </FormField>
+
+                    <FormField
+                      label="Phone"
+                      required
+                      error={addressErrors.phone}
+                      hint="We send delivery updates on WhatsApp."
+                    >
+                      {(props) => (
+                        <input
+                          {...props}
+                          value={address.phone}
+                          onChange={(e) => setField('phone', e.target.value)}
+                          className={inputClass(addressErrors.phone)}
+                          placeholder="+92 300 1234567"
+                          type="tel"
+                          autoComplete="tel"
+                          inputMode="tel"
+                        />
+                      )}
+                    </FormField>
                   </div>
 
-                  <div>
-                    <label className="text-xs font-semibold text-stone uppercase tracking-wider mb-1 block">Address Line 1 *</label>
-                    <input
-                      value={address.addressLine1}
-                      onChange={(e) => setAddress({ ...address, addressLine1: e.target.value })}
-                      className="input-base"
-                      placeholder="House/Flat number, Street"
-                    />
-                  </div>
+                  <FormField label="Address Line 1" required error={addressErrors.addressLine1}>
+                    {(props) => (
+                      <input
+                        {...props}
+                        value={address.addressLine1}
+                        onChange={(e) => setField('addressLine1', e.target.value)}
+                        className={inputClass(addressErrors.addressLine1)}
+                        placeholder="House/Flat number, Street"
+                        autoComplete="address-line1"
+                      />
+                    )}
+                  </FormField>
 
-                  <div>
-                    <label className="text-xs font-semibold text-stone uppercase tracking-wider mb-1 block">Address Line 2 (optional)</label>
-                    <input
-                      value={address.addressLine2}
-                      onChange={(e) => setAddress({ ...address, addressLine2: e.target.value })}
-                      className="input-base"
-                      placeholder="Area, Neighbourhood"
-                    />
-                  </div>
+                  <FormField label="Address Line 2 (optional)" error={addressErrors.addressLine2}>
+                    {(props) => (
+                      <input
+                        {...props}
+                        value={address.addressLine2}
+                        onChange={(e) => setField('addressLine2', e.target.value)}
+                        className={inputClass(addressErrors.addressLine2)}
+                        placeholder="Area, Neighbourhood"
+                        autoComplete="address-line2"
+                      />
+                    )}
+                  </FormField>
 
                   <div className="grid sm:grid-cols-3 gap-4">
-                    <div>
-                      <label className="text-xs font-semibold text-stone uppercase tracking-wider mb-1 block">City *</label>
-                      <input
-                        value={address.city}
-                        onChange={(e) => setAddress({ ...address, city: e.target.value })}
-                        className="input-base"
-                        placeholder="Lahore"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-stone uppercase tracking-wider mb-1 block">Province *</label>
-                      <select
-                        value={address.province}
-                        onChange={(e) => setAddress({ ...address, province: e.target.value })}
-                        className="input-base"
-                      >
-                        <option value="">Select</option>
-                        {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-stone uppercase tracking-wider mb-1 block">Postal Code</label>
-                      <input
-                        value={address.postalCode}
-                        onChange={(e) => setAddress({ ...address, postalCode: e.target.value })}
-                        className="input-base"
-                        placeholder="54000"
-                      />
-                    </div>
+                    <FormField label="City" required error={addressErrors.city}>
+                      {(props) => (
+                        <input
+                          {...props}
+                          value={address.city}
+                          onChange={(e) => setField('city', e.target.value)}
+                          className={inputClass(addressErrors.city)}
+                          placeholder="Lahore"
+                          autoComplete="address-level2"
+                        />
+                      )}
+                    </FormField>
+
+                    <FormField label="Province" required error={addressErrors.province}>
+                      {(props) => (
+                        <select
+                          {...props}
+                          value={address.province}
+                          onChange={(e) => setField('province', e.target.value)}
+                          className={inputClass(addressErrors.province)}
+                          autoComplete="address-level1"
+                        >
+                          <option value="">Select</option>
+                          {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                      )}
+                    </FormField>
+
+                    <FormField label="Postal Code" error={addressErrors.postalCode}>
+                      {(props) => (
+                        <input
+                          {...props}
+                          value={address.postalCode}
+                          onChange={(e) => setField('postalCode', e.target.value)}
+                          className={inputClass(addressErrors.postalCode)}
+                          placeholder="54000"
+                          autoComplete="postal-code"
+                          inputMode="numeric"
+                        />
+                      )}
+                    </FormField>
                   </div>
+
+                  {addressSubmitted && hasErrors(addressErrors) && (
+                    <p role="alert" className="text-sm text-alert">
+                      Please correct the highlighted fields to continue.
+                    </p>
+                  )}
 
                   <button
                     onClick={() => advanceTo('payment')}
@@ -331,69 +464,66 @@ export function CheckoutClient() {
                 <div className="bg-white border border-line rounded-md p-6 space-y-3">
                   <h2 className="font-bold text-ink text-lg">Payment Method</h2>
 
-                  {[
-                    {
-                      key: 'jazzcash' as PaymentMethod,
-                      label: 'JazzCash',
-                      icon: '💳',
-                      desc: 'Pay via JazzCash mobile wallet',
-                    },
-                    {
-                      key: 'easypaisa' as PaymentMethod,
-                      label: 'Easypaisa',
-                      icon: '📱',
-                      desc: 'Pay via Easypaisa mobile wallet',
-                    },
-                    {
-                      key: 'card' as PaymentMethod,
-                      label: 'Credit / Debit Card',
-                      icon: '💳',
-                      desc: 'Visa, Mastercard — secure payment',
-                    },
-                    {
-                      key: 'bank_transfer' as PaymentMethod,
-                      label: 'Bank Transfer',
-                      icon: '🏦',
-                      desc: 'Transfer to our bank account',
-                    },
-                    {
-                      key: 'cod' as PaymentMethod,
-                      label: 'Cash on Delivery',
-                      icon: '💵',
-                      desc: 'Open & check first, then pay.',
-                      badge: 'Most Popular',
-                    },
-                  ].map((option) => (
-                    <label
-                      key={option.key}
-                      className={cn(
-                        'flex items-center gap-4 p-4 border rounded-md cursor-pointer transition-colors',
-                        paymentMethod === option.key
-                          ? 'border-green bg-green-tint'
-                          : 'border-line hover:border-green/40'
-                      )}
-                    >
-                      <input
-                        type="radio"
-                        name="payment"
-                        checked={paymentMethod === option.key}
-                        onChange={() => setPaymentMethod(option.key)}
-                        className="w-4 h-4 text-green"
-                      />
-                      <span className="text-xl">{option.icon}</span>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-ink">{option.label}</span>
-                          {option.badge && (
-                            <span className="text-[10px] font-bold bg-gold text-ink px-1.5 py-0.5 rounded-sm">
-                              {option.badge}
+                  {PAYMENT_OPTIONS.map((option) => {
+                    // Online payment is listed but not selectable — no gateway
+                    // is wired up, so an order placed against one would look
+                    // paid to the customer and unpaid to fulfilment.
+                    const disabled = Boolean(option.comingSoon)
+                    const selected = paymentMethod === option.key
+
+                    return (
+                      <label
+                        key={option.key}
+                        aria-disabled={disabled}
+                        className={cn(
+                          'flex items-center gap-4 p-4 border rounded-md transition-colors',
+                          disabled
+                            ? 'border-line bg-paper opacity-60 cursor-not-allowed'
+                            : selected
+                            ? 'border-green bg-green-tint cursor-pointer'
+                            : 'border-line hover:border-green/40 cursor-pointer',
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="payment"
+                          checked={selected}
+                          disabled={disabled}
+                          onChange={() => !disabled && setPaymentMethod(option.key)}
+                          className="w-4 h-4 text-green disabled:cursor-not-allowed"
+                        />
+                        <span className="text-xl">{option.icon}</span>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span
+                              className={cn(
+                                'font-semibold',
+                                disabled ? 'text-stone' : 'text-ink',
+                              )}
+                            >
+                              {option.label}
                             </span>
-                          )}
+                            {option.badge && !disabled && (
+                              <span className="text-[10px] font-bold bg-gold text-ink px-1.5 py-0.5 rounded-sm">
+                                {option.badge}
+                              </span>
+                            )}
+                            {disabled && (
+                              <span className="text-[10px] font-bold uppercase tracking-wider bg-stone/15 text-stone px-1.5 py-0.5 rounded-sm">
+                                Coming Soon
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-stone">{option.desc}</p>
                         </div>
-                        <p className="text-xs text-stone">{option.desc}</p>
-                      </div>
-                    </label>
-                  ))}
+                      </label>
+                    )
+                  })}
+
+                  <p className="text-xs text-stone pt-1">
+                    Online payments are coming soon. For now you can pay cash on delivery or by
+                    bank transfer.
+                  </p>
 
                   <button
                     onClick={() => advanceTo('review')}
@@ -416,9 +546,17 @@ export function CheckoutClient() {
                       <p className="text-xs font-semibold text-stone uppercase">Delivery To</p>
                       <button onClick={() => setStep('address')} className="text-xs text-green hover:underline">Edit</button>
                     </div>
-                    <p className="font-semibold text-ink">{address.fullName || 'Muhammad Ali'}</p>
-                    <p className="text-sm text-stone">{address.phone || '+92 300 1234567'}</p>
-                    <p className="text-sm text-stone">{address.addressLine1 || 'House 42, Street 5'}, {address.city || 'Lahore'}, {address.province || 'Punjab'}</p>
+                    {/* No placeholder fallbacks. These previously defaulted to
+                        an invented name and address, so an empty form showed a
+                        plausible delivery address that was never going to be
+                        the one on the parcel. */}
+                    <p className="font-semibold text-ink">{address.fullName}</p>
+                    <p className="text-sm text-stone">{address.phone}</p>
+                    <p className="text-sm text-stone">
+                      {[address.addressLine1, address.addressLine2, address.city, address.province, address.postalCode]
+                        .filter(Boolean)
+                        .join(', ')}
+                    </p>
                   </div>
 
                   {/* Shipping & Payment summary */}

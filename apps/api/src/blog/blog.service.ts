@@ -2,14 +2,58 @@ import { Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateBlogPostDto } from './dto/create-blog-post.dto'
 import { UpdateBlogPostDto } from './dto/update-blog-post.dto'
-import { Prisma } from '@prisma/client'
+import { Prisma, BlogCategory } from '@prisma/client'
+
+/**
+ * Display labels for the `BlogCategory` enum.
+ *
+ * The storefront previously carried its own hardcoded copy of this list, which
+ * named four of the six categories — so posts filed under `hajj_guide` or
+ * `travel_tips` were reachable only by direct URL, with no filter chip to
+ * click. Deriving the list from the enum means adding a category to the schema
+ * is enough to surface it.
+ */
+const CATEGORY_LABELS: Record<BlogCategory, string> = {
+  hajj_guide: 'Hajj Guide',
+  umrah_guide: 'Umrah Guide',
+  packing: 'Packing',
+  dua: 'Duas',
+  travel_tips: 'Travel Tips',
+  product_guides: 'Product Guides',
+}
 
 @Injectable()
 export class BlogService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(published = true, page = 1, limit = 12) {
-    const where = published ? { published: true } : {}
+  /**
+   * Categories that actually have published posts, with their counts.
+   *
+   * Empty categories are omitted: a filter chip that leads to "no posts in
+   * this category yet" is a dead end the reader had no way to predict.
+   */
+  async findCategories(publishedOnly = true) {
+    const grouped = await this.prisma.blogPost.groupBy({
+      by: ['category'],
+      where: publishedOnly ? { published: true } : {},
+      _count: { _all: true },
+    })
+
+    return grouped
+      .map((row) => ({
+        slug: row.category,
+        label: CATEGORY_LABELS[row.category] ?? row.category,
+        count: row._count._all,
+      }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+  }
+
+  async findAll(published = true, page = 1, limit = 12, category?: BlogCategory) {
+    const where: Prisma.BlogPostWhereInput = {
+      ...(published ? { published: true } : {}),
+      ...(category ? { category } : {}),
+    }
+
     const [items, total] = await Promise.all([
       this.prisma.blogPost.findMany({
         where,

@@ -1,5 +1,12 @@
-import { apiFetchSafe, buildQuery } from './client'
-import { adaptCategory, adaptReview, adaptBlogPost, adaptSettings, fromBlogCategory } from './adapters'
+import { apiFetch, apiFetchSafe, buildQuery } from './client'
+import {
+  adaptCategory,
+  adaptReview,
+  adaptBlogPost,
+  adaptSettings,
+  fromBlogCategory,
+  toBlogCategory,
+} from './adapters'
 import type { StoreSettings } from './adapters'
 import type { Paginated, WireCategory, WireReview, WireBlogPost, WirePublicSettings } from './wire'
 import type { Category, Review, BlogPost, BlogCategory } from '@/types'
@@ -54,6 +61,32 @@ export async function fetchProductReviews(
   }
 }
 
+export interface CreateReviewInput {
+  productId: string
+  rating: number
+  title: string
+  body: string
+  images?: string[]
+  videoUrl?: string
+}
+
+/**
+ * Submit a review. Requires a signed-in customer — the API puts `POST /reviews`
+ * behind `JwtAuthGuard`, so this deliberately uses `apiFetch` rather than
+ * `apiFetchSafe`: a rejected submission must surface to the person who wrote
+ * it, not be swallowed into a fallback that looks like success.
+ *
+ * The created review comes back unapproved; it appears publicly only once a
+ * moderator approves it.
+ */
+export async function createReview(input: CreateReviewInput): Promise<Review> {
+  const wire = await apiFetch<WireReview>('/reviews', {
+    method: 'POST',
+    body: input,
+  })
+  return adaptReview(wire)
+}
+
 // ─── Blog ─────────────────────────────────────────────────────────────────────
 
 export interface BlogPage {
@@ -62,9 +95,16 @@ export interface BlogPage {
   totalPages: number
 }
 
-export async function fetchBlogPosts(page = 1, limit = 12): Promise<BlogPage> {
+export async function fetchBlogPosts(
+  page = 1,
+  limit = 12,
+  category?: BlogCategory,
+): Promise<BlogPage> {
   const res = await apiFetchSafe<Paginated<WireBlogPost>>(
-    `/blog${buildQuery({ page, limit })}`,
+    // The API filters and paginates; the page used to fetch 50 posts and
+    // filter them in the browser, which silently truncated any category with
+    // posts beyond that window.
+    `/blog${buildQuery({ page, limit, category: category ? fromBlogCategory(category) : undefined })}`,
     { items: [], meta: { total: 0, page: 1, limit, totalPages: 0 } },
     PUBLIC_READ,
   )
@@ -73,6 +113,33 @@ export async function fetchBlogPosts(page = 1, limit = 12): Promise<BlogPage> {
     total: res.meta.total,
     totalPages: res.meta.totalPages,
   }
+}
+
+export interface BlogCategorySummary {
+  /** Hyphenated, matching the storefront's `BlogCategory`. */
+  slug: BlogCategory
+  label: string
+  count: number
+}
+
+interface WireBlogCategory {
+  slug: string
+  label: string
+  count: number
+}
+
+/**
+ * Categories that actually have published posts. Replaces a hardcoded list in
+ * `@/data/blog` that named only four of the six categories, so posts filed
+ * under the other two had no filter chip.
+ */
+export async function fetchBlogCategories(): Promise<BlogCategorySummary[]> {
+  const wire = await apiFetchSafe<WireBlogCategory[]>('/blog/categories', [], PUBLIC_READ)
+  return wire.map((c) => ({
+    slug: toBlogCategory(c.slug),
+    label: c.label,
+    count: c.count,
+  }))
 }
 
 export async function fetchBlogPostBySlug(slug: string): Promise<BlogPost | null> {
@@ -92,15 +159,12 @@ export async function fetchFeaturedBlogPosts(limit = 3): Promise<BlogPost[]> {
   return (featured.length ? featured : items).slice(0, limit)
 }
 
-/**
- * The API has no category filter on /blog, so this filters client-side over
- * the first page. `fromBlogCategory` is still applied so the comparison is
- * made in one consistent representation.
- */
-export async function fetchBlogPostsByCategory(category: BlogCategory): Promise<BlogPost[]> {
-  const { items } = await fetchBlogPosts(1, 50)
-  const wanted = fromBlogCategory(category)
-  return items.filter((p) => fromBlogCategory(p.category) === wanted)
+export async function fetchBlogPostsByCategory(
+  category: BlogCategory,
+  limit = 24,
+): Promise<BlogPost[]> {
+  const { items } = await fetchBlogPosts(1, limit, category)
+  return items
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────

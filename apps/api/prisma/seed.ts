@@ -275,6 +275,78 @@ async function main() {
   ])
   console.log('✅ Settings seeded')
 
+  // ── Kit builder steps ─────────────────────────────────────────────────────
+  //
+  // Replaces the storefront's hardcoded `src/data/kit-categories.ts`. The
+  // groupings and ordering are carried across unchanged so the builder looks
+  // the same, but they are now editable rather than compiled in.
+  const kitSteps: Array<{
+    slug: string
+    nameEn: string
+    nameUr: string
+    nameAr: string
+    icon: string
+    required: boolean
+    order: number
+    categorySlugs: string[]
+  }> = [
+    {
+      slug: 'ihram',
+      nameEn: 'Ihram', nameUr: 'احرام', nameAr: 'الإحرام',
+      icon: '🤍', required: true, order: 1,
+      categorySlugs: ['ihram'],
+    },
+    {
+      slug: 'prayer-items',
+      nameEn: 'Prayer Items', nameUr: 'نماز کی اشیاء', nameAr: 'مستلزمات الصلاة',
+      icon: '📿', required: true, order: 2,
+      categorySlugs: ['prayer-accessories'],
+    },
+    {
+      slug: 'attar-fragrance',
+      nameEn: 'Attar & Fragrance', nameUr: 'عطر و خوشبو', nameAr: 'العطر والعطور',
+      icon: '🌹', required: false, order: 3,
+      categorySlugs: ['fragrances'],
+    },
+    {
+      slug: 'abaya-thobe',
+      nameEn: 'Abaya / Thobe', nameUr: 'عبایہ / ثوب', nameAr: 'العباءة / الثوب',
+      icon: '👗', required: false, order: 4,
+      // The step that motivated a join table rather than a single category id.
+      categorySlugs: ['abaya-hijab'],
+    },
+    {
+      slug: 'dates-zamzam',
+      nameEn: 'Dates & Zam Zam', nameUr: 'کھجور و زم زم', nameAr: 'التمور وزمزم',
+      icon: '🌴', required: false, order: 5,
+      categorySlugs: ['dates-zamzam'],
+    },
+  ]
+
+  for (const step of kitSteps) {
+    const { categorySlugs, ...fields } = step
+    const categoryIds = categorySlugs.map((s) => catMap[s]).filter(Boolean)
+    if (categoryIds.length === 0) continue
+
+    const saved = await prisma.kitCategory.upsert({
+      where: { slug: step.slug },
+      update: fields,
+      create: fields,
+    })
+
+    // Re-created rather than merged, so re-running the seed after editing the
+    // list above converges instead of accumulating stale links.
+    await prisma.kitCategorySource.deleteMany({ where: { kitCategoryId: saved.id } })
+    await prisma.kitCategorySource.createMany({
+      data: categoryIds.map((categoryId, index) => ({
+        kitCategoryId: saved.id,
+        categoryId,
+        order: index,
+      })),
+    })
+  }
+  console.log('✅ Kit builder steps:', kitSteps.length)
+
   console.log('🎉 Seed complete!')
 }
 

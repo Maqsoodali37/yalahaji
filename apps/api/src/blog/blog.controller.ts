@@ -3,6 +3,7 @@ import { ApiTags, ApiCookieAuth, ApiOperation } from '@nestjs/swagger'
 import { BlogService } from './blog.service'
 import { CreateBlogPostDto } from './dto/create-blog-post.dto'
 import { UpdateBlogPostDto } from './dto/update-blog-post.dto'
+import { BlogQueryDto } from './dto/blog-query.dto'
 import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard'
 import { RolesGuard } from '../auth/roles.guard'
 import { Roles, STAFF_MANAGE } from '../auth/roles.decorator'
@@ -14,15 +15,33 @@ export class BlogController {
 
   @Get()
   @ApiOperation({ summary: 'List published posts' })
-  findAll(@Query('page') page = '1', @Query('limit') limit = '12') {
-    return this.blogService.findAll(true, +page, +limit)
+  findAll(@Query() query: BlogQueryDto) {
+    return this.blogService.findAll(true, query.page, query.limit, query.category)
+  }
+
+  /**
+   * Declared before `:slug` — Nest matches routes in declaration order, so a
+   * later static path would be swallowed by the parameterised one and
+   * `/blog/categories` would be looked up as a post slug.
+   */
+  @Get('categories')
+  @ApiOperation({ summary: 'Categories that have published posts, with counts' })
+  findCategories() {
+    return this.blogService.findCategories()
   }
 
   @Get('admin')
   @UseGuards(AdminJwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiCookieAuth()
   @ApiOperation({ summary: 'Admin: list all posts' })
-  findAllAdmin(@Query('page') page = '1', @Query('limit') limit = '12') {
-    return this.blogService.findAll(false, +page, +limit)
+  findAllAdmin(@Query() query: BlogQueryDto) {
+    return this.blogService.findAll(false, query.page, query.limit, query.category)
+  }
+
+  @Get('admin/categories')
+  @UseGuards(AdminJwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiCookieAuth()
+  @ApiOperation({ summary: 'Admin: categories including those with only drafts' })
+  findCategoriesAdmin() {
+    return this.blogService.findCategories(false)
   }
 
   @Get('admin/preview/:slug')

@@ -17,6 +17,7 @@ import {
 } from '@/lib/utils'
 import { SOCIAL } from '@/lib/seo'
 import { ProductCard } from '@/components/shop/product-card'
+import { ReviewForm } from '@/components/product/review-form'
 import { toAnalyticsItem, trackViewItem } from '@/lib/analytics'
 
 interface Props {
@@ -685,8 +686,20 @@ export function ProductDetailClient({ product, reviews, relatedProducts }: Props
             </div>
           </div>
 
+          <div className="mb-8">
+            <ReviewForm productId={product.id} />
+          </div>
+
           {/* Review list */}
           <div className="space-y-5">
+            {displayedReviews.length === 0 && (
+              <div className="border border-line rounded-md p-8 text-center">
+                <p className="font-semibold text-ink mb-1">No reviews yet</p>
+                <p className="text-sm text-stone">
+                  Be the first to share your experience with this product.
+                </p>
+              </div>
+            )}
             {displayedReviews.map((review) => (
               <div key={review.id} className="border border-line rounded-md p-5">
                 <div className="flex items-start justify-between gap-4">

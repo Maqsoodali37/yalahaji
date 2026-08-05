@@ -1,4 +1,13 @@
-import { IsString, IsInt, Min, Max, IsOptional, IsBoolean, MaxLength } from 'class-validator'
+import {
+  IsString,
+  IsInt,
+  Min,
+  Max,
+  IsOptional,
+  IsBoolean,
+  IsNotEmpty,
+  MaxLength,
+} from 'class-validator'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 
 /**
@@ -11,6 +20,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 export class UpsertCartDto {
   @ApiProperty()
   @IsString()
+  @IsNotEmpty()
   variantId: string
 
   @ApiProperty({ minimum: 1, maximum: 99 })

@@ -194,13 +194,59 @@ model Category {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
-  children Category[] @relation("CategoryTree")
-  products Product[]
+  parent     Category?           @relation("CategoryTree", fields: [parentId], references: [id])
+  children   Category[]          @relation("CategoryTree")
+  products   Product[]
+  kitSources KitCategorySource[]
 
   @@index([slug])
   @@index([parentId])
   @@map("categories")
+}
+
+// ─── Kit builder ──────────────────────────────────────────────────────────────
+
+// A step in the "build your own kit" flow.
+//
+// Deliberately not the same thing as a `Category`: a kit step is a
+// merchandising grouping that can draw on several catalogue categories at once
+// (the "Abaya / Thobe" step covers both `abaya-hijab` and `thobe`), and it
+// carries its own ordering, icon and required flag that have no meaning in the
+// catalogue tree. Overloading `Category` with those fields would put kit-only
+// concerns on every shop page.
+model KitCategory {
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  nameEn    String
+  nameUr    String
+  nameAr    String
+  icon      String   @default("")
+  /// A kit cannot be added to the basket until every required step is filled.
+  required  Boolean  @default(false)
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sources KitCategorySource[]
+
+  @@index([isActive, order])
+  @@map("kit_categories")
+}
+
+// Join between a kit step and the catalogue categories it draws products from.
+model KitCategorySource {
+  id            String @id @default(uuid())
+  kitCategoryId String
+  categoryId    String
+  order         Int    @default(0)
+
+  kitCategory KitCategory @relation(fields: [kitCategoryId], references: [id], onDelete: Cascade)
+  category    Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([kitCategoryId, categoryId])
+  @@index([categoryId])
+  @@map("kit_category_sources")
 }
 
 // ─── Product ──────────────────────────────────────────────────────────────────

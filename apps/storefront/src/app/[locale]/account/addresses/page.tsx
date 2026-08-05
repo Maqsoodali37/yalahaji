@@ -1,33 +1,79 @@
 'use client'
 
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { MapPin, Plus, Pencil, Trash2 } from 'lucide-react'
-import { fetchAddresses, deleteAddress } from '@/lib/api'
+import { MapPin, Plus, Pencil, Trash2, AlertCircle, Loader2 } from 'lucide-react'
+import {
+  fetchAddresses,
+  createAddress,
+  updateAddress,
+  deleteAddress,
+  ApiError,
+  type AddressInput,
+} from '@/lib/api'
+import { AddressForm } from '@/components/account/address-form'
+import type { Address } from '@/types'
 
 export default function AddressesPage() {
   const queryClient = useQueryClient()
 
-  const { data: addresses = [], isLoading } = useQuery({
+  // `null` means the dialog is closed; `undefined` inside the open state means
+  // "creating". Encoding both in one value keeps the two mutually exclusive —
+  // the dialog cannot be open for a create and an edit at the same time.
+  const [editing, setEditing] = useState<{ address?: Address } | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState<Address | null>(null)
+  const [actionError, setActionError] = useState('')
+
+  const {
+    data: addresses = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ['my-addresses'],
     queryFn: fetchAddresses,
   })
 
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ['my-addresses'] })
+
+  const save = useMutation({
+    mutationFn: (values: AddressInput) =>
+      editing?.address
+        ? updateAddress(editing.address.id, values)
+        : createAddress(values),
+    // Refetch rather than patching the cache: saving an address as the default
+    // demotes whichever one held it, and only the server knows which.
+    onSuccess: invalidate,
+  })
+
   const remove = useMutation({
     mutationFn: deleteAddress,
-    // Refetch rather than patching the cache: deleting the default address
-    // makes the server promote another one, and only it knows which.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['my-addresses'] }),
+    onSuccess: () => {
+      setConfirmingDelete(null)
+      setActionError('')
+      return invalidate()
+    },
+    onError: (e) =>
+      setActionError(
+        e instanceof ApiError ? e.message : 'Could not delete that address.',
+      ),
   })
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-ink text-xl">Saved Addresses</h2>
-        <button className="btn-primary text-sm py-2 px-4">
+        <button
+          onClick={() => setEditing({})}
+          className="btn-primary text-sm py-2 px-4"
+        >
           <Plus className="w-3.5 h-3.5" />
           Add New
         </button>
       </div>
+
       {isLoading && (
         <div className="bg-white border border-line rounded-md p-5 animate-pulse">
           <div className="h-4 w-40 bg-line rounded-sm mb-2" />
@@ -35,11 +81,39 @@ export default function AddressesPage() {
         </div>
       )}
 
-      {!isLoading && addresses.length === 0 && (
+      {isError && (
+        <div className="bg-white border border-alert/30 rounded-md p-6 text-center">
+          <AlertCircle className="w-8 h-8 text-alert mx-auto mb-3" />
+          <p className="font-semibold text-ink mb-1">Could not load your addresses</p>
+          <p className="text-sm text-stone mb-4">
+            {error instanceof ApiError
+              ? error.message
+              : 'Something went wrong on our side.'}
+          </p>
+          <button onClick={() => refetch()} className="btn-outline text-sm py-2 px-4">
+            Try again
+          </button>
+        </div>
+      )}
+
+      {actionError && (
+        <p
+          role="alert"
+          className="text-sm text-alert bg-alert/5 border border-alert/20 rounded-sm px-3 py-2"
+        >
+          {actionError}
+        </p>
+      )}
+
+      {!isLoading && !isError && addresses.length === 0 && (
         <div className="bg-white border border-line rounded-md p-12 text-center">
           <MapPin className="w-12 h-12 text-stone mx-auto mb-4" />
           <p className="font-semibold text-ink mb-1">No saved addresses</p>
-          <p className="text-sm text-stone">Add one to check out faster next time.</p>
+          <p className="text-sm text-stone mb-4">Add one to check out faster next time.</p>
+          <button onClick={() => setEditing({})} className="btn-primary text-sm py-2 px-4">
+            <Plus className="w-3.5 h-3.5" />
+            Add your first address
+          </button>
         </div>
       )}
 
@@ -50,28 +124,84 @@ export default function AddressesPage() {
             <div className="flex items-center gap-2 mb-1">
               <p className="font-bold text-ink">{addr.fullName}</p>
               {addr.isDefault && (
-                <span className="text-[10px] bg-green text-white px-1.5 py-0.5 rounded-sm font-bold">Default</span>
+                <span className="text-[10px] bg-green text-white px-1.5 py-0.5 rounded-sm font-bold">
+                  Default
+                </span>
               )}
             </div>
             <p className="text-sm text-stone">{addr.phone}</p>
             <p className="text-sm text-stone">{addr.addressLine1}</p>
-            <p className="text-sm text-stone">{addr.city}, {addr.province}</p>
+            <p className="text-sm text-stone">
+              {addr.city}, {addr.province}
+              {addr.postalCode ? ` ${addr.postalCode}` : ''}
+            </p>
           </div>
           <div className="flex gap-2">
-            <button className="p-2 text-stone hover:text-green transition-colors">
+            <button
+              onClick={() => setEditing({ address: addr })}
+              aria-label={`Edit address for ${addr.fullName}`}
+              className="p-2 text-stone hover:text-green transition-colors"
+            >
               <Pencil className="w-4 h-4" />
             </button>
             <button
-              onClick={() => remove.mutate(addr.id)}
-              disabled={remove.isPending}
+              onClick={() => {
+                setActionError('')
+                setConfirmingDelete(addr)
+              }}
               aria-label={`Delete address for ${addr.fullName}`}
-              className="p-2 text-stone hover:text-alert transition-colors disabled:opacity-50"
+              className="p-2 text-stone hover:text-alert transition-colors"
             >
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
         </div>
       ))}
+
+      {editing && (
+        <AddressForm
+          initial={editing.address}
+          onSubmit={(values) => save.mutateAsync(values).then(() => undefined)}
+          onClose={() => setEditing(null)}
+        />
+      )}
+
+      {/* Deleting an address is not reversible from the UI, so it asks first. */}
+      {confirmingDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm delete"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setConfirmingDelete(null)
+          }}
+        >
+          <div className="bg-white border border-line rounded-md p-6 max-w-sm w-full space-y-4">
+            <h3 className="font-bold text-ink text-lg">Delete this address?</h3>
+            <p className="text-sm text-stone">
+              {confirmingDelete.fullName} — {confirmingDelete.addressLine1},{' '}
+              {confirmingDelete.city}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => remove.mutate(confirmingDelete.id)}
+                disabled={remove.isPending}
+                className="btn-primary flex-1 justify-center py-2.5 bg-alert border-alert hover:bg-alert/90 disabled:opacity-60"
+              >
+                {remove.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                {remove.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+              <button
+                onClick={() => setConfirmingDelete(null)}
+                className="btn-outline px-5 py-2.5"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

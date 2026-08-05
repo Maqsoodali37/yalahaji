@@ -32,14 +32,21 @@ export {
   fetchCategoryBySlug,
   fetchFeaturedCategories,
   fetchProductReviews,
+  createReview,
   fetchBlogPosts,
+  fetchBlogCategories,
   fetchBlogPostBySlug,
   fetchFeaturedBlogPosts,
   fetchBlogPostsByCategory,
   fetchSettings,
   SETTINGS_FALLBACK,
 } from './catalog'
-export type { ReviewPage, BlogPage } from './catalog'
+export type {
+  ReviewPage,
+  BlogPage,
+  CreateReviewInput,
+  BlogCategorySummary,
+} from './catalog'
 
 export {
   login,
@@ -78,6 +85,21 @@ export {
   trackOrder,
 } from './orders'
 export type { PlaceOrderInput, OrderAddressInput, OrderPage, TrackedOrder } from './orders'
+
+export { fetchKitCategories } from './kit'
+
+export {
+  fetchReturnableOrders,
+  fetchMyReturns,
+  createReturn,
+} from './returns'
+export type {
+  ReturnStatus,
+  ReturnableOrder,
+  ReturnableOrderItem,
+  ReturnRequest,
+  CreateReturnInput,
+} from './returns'
 
 export { ensureSessionId, clearSessionId } from './session'
 export { getToken, setToken, clearToken } from './token'

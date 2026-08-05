@@ -7,8 +7,10 @@ import { AuthModule } from './auth/auth.module'
 import { UsersModule } from './users/users.module'
 import { ProductsModule } from './products/products.module'
 import { CategoriesModule } from './categories/categories.module'
+import { KitCategoriesModule } from './kit-categories/kit-categories.module'
 import { VariantsModule } from './variants/variants.module'
 import { OrdersModule } from './orders/orders.module'
+import { ReturnsModule } from './returns/returns.module'
 import { CartModule } from './cart/cart.module'
 import { ReviewsModule } from './reviews/reviews.module'
 import { CouponsModule } from './coupons/coupons.module'
@@ -43,8 +45,10 @@ import { HealthModule } from './health/health.module'
     UsersModule,
     ProductsModule,
     CategoriesModule,
+    KitCategoriesModule,
     VariantsModule,
     OrdersModule,
+    ReturnsModule,
     CartModule,
     ReviewsModule,
     CouponsModule,

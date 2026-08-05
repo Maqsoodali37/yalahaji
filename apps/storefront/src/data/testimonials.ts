@@ -1,3 +1,13 @@
+// Curated editorial content, not mock data.
+//
+// The other files that lived in this directory were stand-ins for API calls
+// and have been removed now that those endpoints are wired. These testimonials
+// are deliberately static: they are marketing copy with signed-off wording,
+// they change a few times a year, and there is no admin surface for them yet.
+//
+// If they ever need to be editable without a deploy, they get a table and an
+// endpoint like everything else — until then this is the honest home for them.
+
 import type { Testimonial } from '@/types'
 
 export const testimonials: Testimonial[] = [

@@ -303,14 +303,122 @@ Shop · category · PDP · homepage (featured, tiles, blog strip) · predictive
 search (debounced) · blog list + detail · cart · checkout · login/register ·
 account orders, order detail, addresses, profile, wishlist · compare · sitemap.
 
+Plus, as of the August 2026 pass: `/account/returns`, `/kit-builder`, blog
+category filters, and review submission on the PDP.
+
 ### Still on mock data
 
-| What | Blocked on |
+| What | Status |
 |---|---|
-| `/account/returns` | Returns module — `Return` model exists, no controller/service |
-| Homepage testimonials | No Testimonial model at all |
-| `/kit-builder` | No kit-category model or endpoint |
-| `blogCategories` labels | Static UI labels; fine as a constant |
+| Homepage testimonials | Deliberately static — curated marketing copy, no admin surface planned yet. Documented in `src/data/testimonials.ts`. |
+
+`src/data/` previously held seven files standing in for API calls. Six are gone;
+only `testimonials.ts` remains, and it is editorial content rather than a
+placeholder.
+
+## August 2026 completion pass
+
+### Validation
+
+Client-side rules live in **`apps/storefront/src/lib/validation.ts`**, server-side
+constants in **`apps/api/src/common/validation.ts`**. The two are intentional
+mirrors — the storefront copy exists to catch a bad value before a round trip,
+the API copy is what actually protects the database. Change one, change both.
+
+`FormField` (`components/ui/form-field.tsx`) wires label, control and error
+together for screen readers and reserves the error line so the layout does not
+jump between keystrokes.
+
+Forms now validated on both sides: checkout address, saved addresses
+(create + edit), profile, login, register, review submission, return requests.
+
+**The headline fix:** checkout had no validation at all, and `OrderAddressDto`
+used bare `@IsString()`, which accepts `""`. Orders with a blank recipient and
+no phone number were reaching the database — undeliverable, with no way to
+contact the buyer. The review step also fell back to `address.fullName ||
+'Muhammad Ali'`, so an empty form displayed a plausible-looking address that was
+never going to be on the parcel.
+
+### Business rules added to `OrdersService.create`
+
+- A guest order must carry a phone or email. `trackOrder` matches on exactly
+  those fields, so an order without either could not be looked up by its own
+  buyer.
+- The same variant cannot appear on two lines. Each line passed the per-line
+  stock check while together exceeding stock.
+
+### New modules
+
+- `kit-categories/` — `GET /kit-categories` (public), plus admin CRUD behind
+  `AdminJwtAuthGuard` + `STAFF_MANAGE`. New `KitCategory` + `KitCategorySource`
+  models (migration `20260806090000_kit_categories`). A kit step is not a
+  `Category`: it can draw on several catalogue categories at once and carries
+  ordering, an icon and a required flag that have no meaning in the catalogue
+  tree.
+- `returns/` — `GET /returns/eligible-orders`, `GET /returns/me`,
+  `POST /returns`, `GET /returns/:id`, plus `GET /returns/admin`. The `Return`
+  model already existed; only the service and controller were missing. The
+  7-day window advertised on the storefront is now enforced server-side, and one
+  open request per order is allowed at a time.
+- Blog: `GET /blog/categories` (enum-derived, with counts) and a `?category=`
+  filter on `GET /blog`. The storefront's hardcoded list named four of the six
+  categories, so posts in the other two had no filter chip; the page also
+  fetched 50 posts and filtered in the browser, silently truncating anything
+  past that window.
+
+### Payment methods
+
+Only **Cash on Delivery** and **Bank Transfer** can be selected. Both work
+without a gateway — cash is collected on delivery, transfers are reconciled by
+hand.
+
+JazzCash, Easypaisa and card are shown in checkout with a **Coming Soon** badge,
+greyed out and non-selectable. There is no gateway integration behind any of
+them: no redirect, no callback, nothing that moves `Order.paymentStatus` off
+`unpaid`. Offering them produced orders that looked paid to the customer and
+were indistinguishable from unpaid ones to fulfilment. Checkout also used to
+*default* to `jazzcash`, so clicking straight through the payment step selected
+one.
+
+Enforced on both sides — `CreateOrderDto` validates `paymentMethod` with
+`@IsIn(ENABLED_PAYMENT_METHODS)` rather than against the whole enum, so a
+hand-rolled request cannot bypass the UI.
+
+| Where | File |
+|---|---|
+| API | `apps/api/src/common/payment-methods.ts` |
+| Storefront | `apps/storefront/src/lib/payment-methods.ts` |
+
+To enable one when its gateway ships, flip `comingSoon` in the storefront list
+**and** add the method to `ENABLED_PAYMENT_METHODS` on the API. Both are
+required. The `PaymentMethod` enum and both TypeScript unions deliberately keep
+all five values — historical orders may already hold a disabled method, and
+admin and order-detail screens must still render them.
+
+### Newly integrated endpoints
+
+`POST /reviews` had existed since the API was built and nothing called it — the
+PDP could display reviews but never collect one. `createAddress` and
+`updateAddress` were exported from the storefront's API layer but the "Add New"
+and edit buttons on `/account/addresses` had no handlers.
+
+### Misleading empty states
+
+`fetchProducts` uses `apiFetchSafe`, so it degrades to an empty page rather than
+throwing — meaning `isError` never fires. The wishlist and compare pages read
+that as "you have nothing saved" and told customers their saved items were gone
+when the catalogue simply had not loaded. Both now distinguish the two.
+
+### Tests
+
+- API: `npm test` in `apps/api` (Jest, 25 specs) — order guards, returns window
+  and status rules, kit-category resolution.
+- Storefront: `npm test` in `apps/storefront` (Vitest, 18 specs) — validation
+  rules and the shared address rule set.
+
+⚠️ **Run `npx prisma migrate deploy`, `npx prisma generate` and
+`npm run prisma:seed`** — the kit-categories migration adds two tables and the
+seed populates the five kit builder steps.
 
 ## API additions and fixes made during integration
 
@@ -339,12 +447,26 @@ address migration changes the schema.
 
 ## Next targets
 
-### 1. Remaining API modules
-Returns, testimonials, kit categories, newsletter signup, review "helpful"
-votes — the four storefront areas above stay on mocks until these exist.
+### 1. Admin panel — 6 pages are still `ComingSoon` stubs
+`analytics`, `blog`, `categories`, `coupons`, `customers`, `reviews` under
+`apps/admin/src/app/(dashboard)/`. Backends already exist for blog, categories,
+coupons and customers. Reviews needs a `GET /reviews/admin` moderation queue
+(only `findByProduct` exists today), and analytics needs more than the current
+`/orders/admin/stats` + `/products/admin/stats`.
 
-### 2. Payment gateway integration
-JazzCash, Easypaisa, and COD are in the `PaymentMethod` enum. Need to implement the actual redirect/callback flow per provider and update `Order.paymentStatus` accordingly.
+Also pending on the admin side: the returns moderation queue (the customer half
+and `GET /returns/admin` are done; approving/rejecting is not), kit-category
+CRUD screens against the endpoints that now exist, and an admin settings
+read/write endpoint — only `GET /settings/public` exists.
+
+### 2. Remaining API modules
+Testimonials, newsletter signup, review "helpful" votes.
+
+### 3. Payment gateway integration
+JazzCash, Easypaisa and card are disabled in checkout and rejected by
+`CreateOrderDto` until a gateway exists. Each needs its redirect/callback flow
+and `Order.paymentStatus` transitions; then enable it in the two
+`payment-methods` files described above.
 
 ---
 

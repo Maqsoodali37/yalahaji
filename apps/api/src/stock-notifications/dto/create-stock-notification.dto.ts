@@ -1,7 +1,7 @@
-import { IsString, IsEmail } from 'class-validator'
+import { IsEmail, IsUUID, MaxLength } from 'class-validator'
 import { ApiProperty } from '@nestjs/swagger'
 
 export class CreateStockNotificationDto {
-  @ApiProperty() @IsString() productId: string
-  @ApiProperty() @IsEmail() email: string
+  @ApiProperty() @IsUUID() productId: string
+  @ApiProperty() @IsEmail() @MaxLength(255) email: string
 }

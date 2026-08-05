@@ -3,13 +3,11 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from 'next-intl'
-import { ShoppingCart, CheckCircle, ChevronRight, ChevronLeft, X } from 'lucide-react'
-import { kitCategories } from '@/data/kit-categories'
-import { getProductById } from '@/data/products'
+import { ShoppingCart, CheckCircle, ChevronRight, ChevronLeft, X, PackageOpen } from 'lucide-react'
 import { useCartStore } from '@/store/cart'
 import { formatPrice } from '@/lib/utils'
 import { cn } from '@/lib/utils'
-import type { Tier, Product } from '@/types'
+import type { Tier, Product, KitCategory } from '@/types'
 
 type Selection = {
   categoryId: string
@@ -20,7 +18,7 @@ type Selection = {
 
 const TIERS: Tier[] = ['Economy', 'Standard', 'Premium']
 
-export function KitBuilderClient() {
+export function KitBuilderClient({ kitCategories }: { kitCategories: KitCategory[] }) {
   const locale = useLocale()
   const addItem = useCartStore((s) => s.addItem)
   const openCart = useCartStore((s) => s.openCart)
@@ -34,6 +32,19 @@ export function KitBuilderClient() {
 
   // Get products from kit category's own list
   const categoryProducts = activeCategory?.products?.slice(0, 6) ?? []
+
+  /**
+   * Products now arrive with the steps, so a selected id can be resolved from
+   * what is already in memory. This used to call `getProductById` against a
+   * bundled copy of the catalogue.
+   */
+  const productById = (id: string): Product | undefined => {
+    for (const cat of kitCategories) {
+      const found = cat.products.find((p) => p.id === id)
+      if (found) return found
+    }
+    return undefined
+  }
 
   const toggleSelection = (product: Product) => {
     const key = product.id
@@ -57,7 +68,7 @@ export function KitBuilderClient() {
 
   const kitItems = Object.values(selections)
   const kitTotal = kitItems.reduce((sum, sel) => {
-    const product = getProductById(sel.productId)
+    const product = productById(sel.productId)
     if (!product) return sum
     const variant = product.variants.find((v) => v.tier === sel.tier) ?? product.variants[0]
     return sum + (variant?.price ?? 0) * sel.quantity
@@ -65,7 +76,7 @@ export function KitBuilderClient() {
 
   const handleAddAllToCart = () => {
     kitItems.forEach((sel) => {
-      const product = getProductById(sel.productId)
+      const product = productById(sel.productId)
       if (!product) return
       const variant = product.variants.find((v) => v.tier === sel.tier) ?? product.variants[0]
       if (!variant) return
@@ -103,6 +114,26 @@ export function KitBuilderClient() {
         </div>
       </div>
 
+      {/* The steps come from the API now, so "none configured" and "API
+          unreachable" both land here rather than rendering a builder with no
+          tabs and a permanently disabled Add-to-cart button. */}
+      {kitCategories.length === 0 && (
+        <div className="container-max py-20 text-center max-w-md">
+          <div className="w-16 h-16 bg-paper border border-line rounded-full flex items-center justify-center mx-auto mb-5">
+            <PackageOpen className="w-8 h-8 text-stone" />
+          </div>
+          <h2 className="serif text-xl text-ink mb-2">Kit builder is unavailable</h2>
+          <p className="text-stone text-sm mb-6">
+            We couldn’t load the kit categories just now. Please try again in a moment, or browse
+            our ready-made kits instead.
+          </p>
+          <Link href={`/${locale}/shop`} className="btn-primary">
+            Browse ready-made kits
+          </Link>
+        </div>
+      )}
+
+      {kitCategories.length > 0 && (
       <div className="container-max py-8">
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Left: Categories + Products */}
@@ -240,7 +271,7 @@ export function KitBuilderClient() {
               ) : (
                 <div className="space-y-2 mb-4 max-h-80 overflow-y-auto">
                   {kitItems.map((sel) => {
-                    const product = getProductById(sel.productId)
+                    const product = productById(sel.productId)
                     if (!product) return null
                     const variant = product.variants.find((v) => v.tier === sel.tier) ?? product.variants[0]
                     return (
@@ -308,6 +339,7 @@ export function KitBuilderClient() {
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }

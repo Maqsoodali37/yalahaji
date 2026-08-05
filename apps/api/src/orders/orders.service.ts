@@ -23,6 +23,24 @@ export class OrdersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateOrderDto, userId?: string) {
+    // A guest has no account to be reached through, and `trackOrder` matches
+    // on exactly these two fields — so an order placed without either is one
+    // its own buyer can never look up and support cannot chase.
+    if (!userId && !dto.guestPhone && !dto.guestEmail) {
+      throw new BadRequestException(
+        'A phone number or email is required so we can contact you about the order.',
+      )
+    }
+
+    // Two lines for the same variant each pass the per-line stock check while
+    // together exceeding stock, and would then be written as duplicate rows.
+    const variantIds = dto.items.map((i) => i.variantId)
+    if (new Set(variantIds).size !== variantIds.length) {
+      throw new BadRequestException(
+        'The same item appears more than once. Combine it into a single line.',
+      )
+    }
+
     const addressId = await this.resolveAddress(dto, userId)
 
     // Validate variants and compute totals

@@ -30,13 +30,19 @@ export default function ComparePage() {
 
   // No bulk by-id endpoint exists, so pull a catalogue page and filter to the
   // compared ids. Adequate at this catalogue size.
-  const { data } = useQuery({
+  const { data, isLoading, isFetched, refetch } = useQuery({
     queryKey: ['compare-products'],
     queryFn: () => fetchProducts({ limit: 100 }),
     enabled: ids.length > 0,
     staleTime: 5 * 60 * 1000,
   })
   const products = (data?.items ?? []).filter((p) => ids.includes(p.id))
+
+  // `fetchProducts` degrades to an empty page instead of throwing, so `isError`
+  // never fires. Compared ids that resolve to nothing means the catalogue did
+  // not load — telling someone to "add at least 2 products" when they already
+  // added four sends them to do it again.
+  const failedToLoad = ids.length > 0 && isFetched && products.length === 0
 
   const getValue = (product: Product, key: string) => {
     switch (key) {
@@ -108,7 +114,24 @@ export default function ComparePage() {
           )}
         </div>
 
-        {products.length < 2 ? (
+        {isLoading ? (
+          <div className="text-center py-20">
+            <div className="w-10 h-10 border-2 border-line border-t-green rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-stone text-sm">Loading your comparison…</p>
+          </div>
+        ) : failedToLoad ? (
+          <div className="text-center py-20">
+            <BarChart2 className="w-12 h-12 text-alert/40 mx-auto mb-4" />
+            <h2 className="serif text-xl text-ink mb-2">Could not load these products</h2>
+            <p className="text-stone text-sm mb-6">
+              Your {ids.length} compared {ids.length === 1 ? 'product is' : 'products are'} still
+              saved — we just could not reach the catalogue.
+            </p>
+            <button onClick={() => refetch()} className="btn-primary">
+              Try again
+            </button>
+          </div>
+        ) : products.length < 2 ? (
           <div className="text-center py-20">
             <BarChart2 className="w-12 h-12 text-stone/30 mx-auto mb-4" />
             <h2 className="serif text-xl text-ink mb-2">Add at least 2 products to compare</h2>
