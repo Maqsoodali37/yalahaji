@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateBlogPostDto } from './dto/create-blog-post.dto'
+import { UpdateBlogPostDto } from './dto/update-blog-post.dto'
 import { Prisma } from '@prisma/client'
 
 @Injectable()
@@ -27,9 +28,19 @@ export class BlogService {
     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } }
   }
 
-  async findBySlug(slug: string) {
+  /**
+   * `includeUnpublished` is opt-in and only ever passed by the staff-guarded
+   * preview route. The public route must not surface drafts: the listing
+   * already filtered on `published`, so an unfiltered lookup here let anyone
+   * who guessed or scraped a slug read unreleased posts.
+   *
+   * A draft returns 404 rather than 403 so the endpoint cannot be used to
+   * confirm that a given slug exists.
+   */
+  async findBySlug(slug: string, includeUnpublished = false) {
     const post = await this.prisma.blogPost.findUnique({ where: { slug } })
     if (!post) throw new NotFoundException('Post not found.')
+    if (!post.published && !includeUnpublished) throw new NotFoundException('Post not found.')
     return post
   }
 
@@ -42,7 +53,7 @@ export class BlogService {
     })
   }
 
-  async update(id: string, dto: Partial<CreateBlogPostDto>) {
+  async update(id: string, dto: UpdateBlogPostDto) {
     const post = await this.prisma.blogPost.findUnique({ where: { id } })
     if (!post) throw new NotFoundException('Post not found.')
 

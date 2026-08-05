@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateCategoryDto } from './dto/create-category.dto'
+import { UpdateCategoryDto } from './dto/update-category.dto'
 import { Prisma } from '@prisma/client'
 
 @Injectable()
@@ -36,7 +37,7 @@ export class CategoriesService {
     return this.prisma.category.create({ data: dto as Prisma.CategoryUncheckedCreateInput })
   }
 
-  async update(id: string, dto: Partial<CreateCategoryDto>) {
+  async update(id: string, dto: UpdateCategoryDto) {
     const cat = await this.prisma.category.findUnique({ where: { id } })
     if (!cat) throw new NotFoundException('Category not found.')
     return this.prisma.category.update({ where: { id }, data: dto })

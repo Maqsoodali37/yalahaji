@@ -16,7 +16,11 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'yalahaji.com' },
+      // MinIO media behind nginx — without this next/image rejects every
+      // uploaded product photo with "hostname is not configured".
+      { protocol: 'https', hostname: 'cdn.yalahaji.com' },
       { protocol: 'https', hostname: 'images.unsplash.com' },
+      { protocol: 'http', hostname: 'localhost' },
     ],
   },
   experimental: {

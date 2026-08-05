@@ -1,10 +1,13 @@
-import { Controller, Get, Post, Patch, Param, Body, Query, Request, UseGuards } from '@nestjs/common'
+import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards, HttpCode } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth, ApiCookieAuth, ApiOperation } from '@nestjs/swagger'
+import { Throttle } from '@nestjs/throttler'
 import { OrderStatus } from '@prisma/client'
 import { OrdersService } from './orders.service'
 import { CreateOrderDto } from './dto/create-order.dto'
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto'
+import { TrackOrderDto } from './dto/track-order.dto'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard'
 import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard'
 import { RolesGuard } from '../auth/roles.guard'
 import { Roles, STAFF_ORDERS } from '../auth/roles.decorator'
@@ -15,11 +18,18 @@ import { CurrentUser } from '../auth/current-user.decorator'
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
+  /**
+   * Guests and signed-in customers both post here. The optional guard is what
+   * makes `user` real: with no guard at all Passport never ran, so `req.user`
+   * was always undefined and every authenticated order was filed as a guest
+   * order with no `userId`.
+   */
   @Post()
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Place an order (auth or guest)' })
-  create(@Body() dto: CreateOrderDto, @Request() req: any) {
-    const userId = req.user?.id
-    return this.ordersService.create(dto, userId)
+  create(@Body() dto: CreateOrderDto, @CurrentUser() user: any) {
+    return this.ordersService.create(dto, user?.id)
   }
 
   @Get()
@@ -66,10 +76,18 @@ export class OrdersController {
     return this.ordersService.findByIdAdmin(id)
   }
 
-  @Get('track/:number')
-  @ApiOperation({ summary: 'Track order by number (public)' })
-  track(@Param('number') number: string) {
-    return this.ordersService.findByNumber(number)
+  /**
+   * POST rather than GET so the customer's email/phone stays out of URLs,
+   * access logs and Referer headers. Rate-limited well below the global
+   * ceiling because this is the one order endpoint an anonymous caller can
+   * reach, and the contact check is only as good as the guess rate.
+   */
+  @Post('track/:number')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Track an order by number + the contact it was placed with' })
+  track(@Param('number') number: string, @Body() dto: TrackOrderDto) {
+    return this.ordersService.trackByNumber(number, dto.contact)
   }
 
   @Get(':number')

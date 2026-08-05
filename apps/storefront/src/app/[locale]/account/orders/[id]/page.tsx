@@ -1,10 +1,13 @@
-import { notFound } from 'next/navigation'
+'use client'
+
+import { use } from 'react'
 import Link from 'next/link'
-import { getLocale } from 'next-intl/server'
+import { useLocale } from 'next-intl'
+import { useQuery } from '@tanstack/react-query'
 import {
   CheckCircle, Clock, Package, Truck, Home, ChevronRight,
 } from 'lucide-react'
-import { mockOrders } from '@/data/orders'
+import { fetchMyOrder } from '@/lib/api'
 import { formatPrice } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import type { OrderStatus } from '@/types'
@@ -33,11 +36,44 @@ const STEP_LABELS: Record<string, string> = {
   delivered: 'Delivered',
 }
 
-export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const locale = await getLocale()
-  const { id } = await params
-  const order = mockOrders.find((o) => o.id === id)
-  if (!order) notFound()
+export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const locale = useLocale()
+  // The route segment carries the order NUMBER (YH-2026-1001) — that is the
+  // identifier the customer sees and the one /orders/:number is keyed on.
+  const { id: orderNumber } = use(params)
+
+  const { data: order, isLoading, isError } = useQuery({
+    queryKey: ['my-order', orderNumber],
+    queryFn: () => fetchMyOrder(orderNumber),
+  })
+
+  if (isLoading) {
+    return (
+      <div className="bg-white border border-line rounded-md p-6 animate-pulse space-y-3">
+        <div className="h-5 w-40 bg-line rounded-sm" />
+        <div className="h-3 w-56 bg-line rounded-sm" />
+        <div className="h-24 w-full bg-line/60 rounded-sm" />
+      </div>
+    )
+  }
+
+  // A wrong number and someone else's order are indistinguishable here by
+  // design — the API scopes the lookup to the signed-in customer and 404s
+  // rather than revealing that an order exists.
+  if (isError || !order) {
+    return (
+      <div className="bg-white border border-line rounded-md p-12 text-center">
+        <Package className="w-12 h-12 text-stone mx-auto mb-4" />
+        <p className="font-semibold text-ink mb-1">Order not found</p>
+        <p className="text-sm text-stone mb-4">
+          We couldn&apos;t find an order with that number on your account.
+        </p>
+        <Link href={`/${locale}/account/orders`} className="btn-primary">
+          Back to My Orders
+        </Link>
+      </div>
+    )
+  }
 
   const currentIdx = TIMELINE_STEPS.indexOf(order.status)
 
@@ -47,13 +83,13 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       <nav className="flex items-center gap-1.5 text-sm text-stone">
         <Link href={`/${locale}/account/orders`} className="hover:text-green">My Orders</Link>
         <ChevronRight className="w-3.5 h-3.5" />
-        <span className="text-ink font-medium">{order.id}</span>
+        <span className="text-ink font-medium">{order.number}</span>
       </nav>
 
       <div className="bg-white border border-line rounded-md p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="font-bold text-ink text-xl">{order.id}</h2>
+            <h2 className="font-bold text-ink text-xl">{order.number}</h2>
             <p className="text-sm text-stone mt-0.5">
               Placed {new Date(order.createdAt).toLocaleDateString('en-PK', { day: 'numeric', month: 'long', year: 'numeric' })}
             </p>

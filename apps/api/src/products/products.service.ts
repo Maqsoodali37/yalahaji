@@ -34,11 +34,12 @@ export class ProductsService {
   async findAll(query: ProductQueryDto) {
     const {
       category, tier, minPrice, maxPrice, size, color, scent,
-      rating, inStock, badges, search, sort, page = 1, limit = 24,
+      rating, inStock, badges, search, sort, featured, page = 1, limit = 24,
     } = query
 
     const where: Prisma.ProductWhereInput = {
       isActive: true,
+      ...(featured && { isFeatured: true }),
       ...(category && { category: { slug: category } }),
       ...(badges && { badges: { some: { badge: { in: badges } } } }),
       ...(search && {
@@ -63,17 +64,81 @@ export class ProductsService {
       ...(rating && { avgRating: { gte: rating } }),
     }
 
-    const orderBy = this.buildOrderBy(sort)
     const skip = (page - 1) * limit
 
+    // Price sorting cannot be expressed as a Prisma `orderBy` — a product's
+    // price lives on its cheapest variant, and relation aggregates aren't
+    // orderable. The previous `variants: { _count: 'asc' }` silently sorted by
+    // the *number of variants* instead, so "price: low to high" on the shop
+    // page returned an order unrelated to price.
+    if (sort === 'price_asc' || sort === 'price_desc') {
+      return this.findAllSortedByPrice(where, sort, page, limit)
+    }
+
     const [items, total] = await Promise.all([
-      this.prisma.product.findMany({ where, select: PRODUCT_SELECT, orderBy, skip, take: limit }),
+      this.prisma.product.findMany({
+        where, select: PRODUCT_SELECT, orderBy: this.buildOrderBy(sort), skip, take: limit,
+      }),
       this.prisma.product.count({ where }),
     ])
 
     return {
       items,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    }
+  }
+
+  /**
+   * Order by each product's cheapest active variant.
+   *
+   * Resolves ids first, then sorts on a variant aggregate, then fetches only
+   * the page's rows. Three cheap queries instead of one, which is the price of
+   * getting the order right; the id and aggregate passes both hit indexes and
+   * return narrow rows.
+   */
+  private async findAllSortedByPrice(
+    where: Prisma.ProductWhereInput,
+    sort: 'price_asc' | 'price_desc',
+    page: number,
+    limit: number,
+  ) {
+    const matching = await this.prisma.product.findMany({ where, select: { id: true } })
+    const ids = matching.map((p) => p.id)
+    if (ids.length === 0) {
+      return { items: [], meta: { total: 0, page, limit, totalPages: 0 } }
+    }
+
+    const grouped = await this.prisma.productVariant.groupBy({
+      by: ['productId'],
+      where: { productId: { in: ids }, isActive: true },
+      _min: { price: true },
+    })
+
+    const priceOf = new Map(grouped.map((g) => [g.productId, g._min.price ?? Number.MAX_SAFE_INTEGER]))
+    const direction = sort === 'price_asc' ? 1 : -1
+
+    const ordered = [...ids].sort((a, b) => {
+      const pa = priceOf.get(a) ?? Number.MAX_SAFE_INTEGER
+      const pb = priceOf.get(b) ?? Number.MAX_SAFE_INTEGER
+      // Products with no active variant have no price; keep them last in both
+      // directions rather than letting them head the "most expensive" page.
+      if (pa === pb) return a < b ? -1 : 1
+      return (pa - pb) * direction
+    })
+
+    const pageIds = ordered.slice((page - 1) * limit, page * limit)
+    const rows = await this.prisma.product.findMany({
+      where: { id: { in: pageIds } },
+      select: PRODUCT_SELECT,
+    })
+
+    // `findMany` ignores the order of an `in` clause, so restore it.
+    const byId = new Map(rows.map((r) => [r.id, r]))
+    const items = pageIds.map((id) => byId.get(id)).filter(Boolean)
+
+    return {
+      items,
+      meta: { total: ids.length, page, limit, totalPages: Math.ceil(ids.length / limit) },
     }
   }
 
@@ -294,8 +359,8 @@ export class ProductsService {
 
   private buildOrderBy(sort?: string): Prisma.ProductOrderByWithRelationInput {
     switch (sort) {
-      case 'price_asc': return { variants: { _count: 'asc' } }
-      case 'price_desc': return { variants: { _count: 'desc' } }
+      // price_asc / price_desc are handled by findAllSortedByPrice — they
+      // cannot be expressed here and must never fall through to a default.
       case 'newest': return { createdAt: 'desc' }
       case 'rating': return { avgRating: 'desc' }
       case 'popularity': default: return { soldCount: 'desc' }

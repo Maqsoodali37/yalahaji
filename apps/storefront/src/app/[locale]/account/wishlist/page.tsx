@@ -3,17 +3,28 @@
 import Link from 'next/link'
 import { useLocale } from 'next-intl'
 import { Heart } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useWishlistStore } from '@/store/wishlist'
-import { getProductById } from '@/data/products'
+import { fetchProducts } from '@/lib/api'
 import { ProductCard } from '@/components/shop/product-card'
 import type { Product } from '@/types'
 
 export default function WishlistPage() {
   const locale = useLocale()
   const ids = useWishlistStore((s) => s.ids)
-  const products = Array.from(ids)
-    .map((id) => getProductById(id))
-    .filter((p): p is Product => !!p)
+  const wishlistIds = Array.from(ids)
+
+  // There is no bulk products-by-id endpoint, so fetch a catalogue page and
+  // filter. Fine at this catalogue size; if it grows past a few hundred
+  // products this should become a dedicated `?ids=` query.
+  const { data } = useQuery({
+    queryKey: ['wishlist-products', wishlistIds],
+    queryFn: () => fetchProducts({ limit: 100 }),
+    enabled: wishlistIds.length > 0,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const products: Product[] = (data?.items ?? []).filter((p) => ids.has(p.id))
 
   return (
     <div className="space-y-4">

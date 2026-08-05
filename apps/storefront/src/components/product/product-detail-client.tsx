@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from 'next-intl'
 import {
@@ -17,6 +17,7 @@ import {
 } from '@/lib/utils'
 import { SOCIAL } from '@/lib/seo'
 import { ProductCard } from '@/components/shop/product-card'
+import { toAnalyticsItem, trackViewItem } from '@/lib/analytics'
 
 interface Props {
   product: Product
@@ -42,6 +43,28 @@ export function ProductDetailClient({ product, reviews, relatedProducts }: Props
   const openCart = useCartStore((s) => s.openCart)
   const { isInWishlist, toggle: toggleWishlist } = useWishlistStore()
   const inWishlist = isInWishlist(product.id)
+
+  // One view_item per variant the visitor lands on or switches to. Keyed on
+  // the variant id rather than the product so tier and size selections show up
+  // as separate item views, which is how the cart and purchase events key too.
+  useEffect(() => {
+    trackViewItem(
+      toAnalyticsItem({
+        productId: product.id,
+        variantId: selectedVariant.id,
+        name: product.name.en,
+        tier: selectedVariant.tier,
+        size: selectedVariant.size,
+        color: selectedVariant.color,
+        scent: selectedVariant.scent,
+        price: selectedVariant.price,
+        compareAtPrice: selectedVariant.compareAtPrice,
+        quantity: 1,
+      }),
+    )
+    // product.name.en is intentionally the label sent to GA4 — reports stay
+    // comparable across locales instead of splitting one product into three.
+  }, [product.id, product.name.en, selectedVariant])
 
   const isOutOfStock = selectedVariant.stock === 0
   const isLowStock = !isOutOfStock && selectedVariant.stock <= selectedVariant.lowStockThreshold

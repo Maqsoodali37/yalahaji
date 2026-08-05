@@ -1,13 +1,22 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from 'next-intl'
 import { CheckCircle, ChevronRight, Lock, CreditCard, ClipboardList } from 'lucide-react'
 import { useCartStore } from '@/store/cart'
-import { formatPrice, FREE_SHIPPING_THRESHOLD } from '@/lib/utils'
+import { useAuthStore } from '@/store/auth'
+import { placeOrder, ApiError } from '@/lib/api'
+import { formatPrice } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import type { Address, PaymentMethod, ShippingMethod } from '@/types'
+import {
+  toAnalyticsItem,
+  trackAddPaymentInfo,
+  trackAddShippingInfo,
+  trackBeginCheckout,
+  trackPurchase,
+} from '@/lib/analytics'
 
 type Step = 'address' | 'payment' | 'review' | 'success'
 
@@ -19,15 +28,25 @@ const STEPS: { key: Step; label: string; icon: typeof Lock }[] = [
 
 const PROVINCES = ['Punjab', 'Sindh', 'KPK', 'Balochistan', 'Azad Kashmir', 'Gilgit-Baltistan']
 
+/** GA4's shipping_tier — one option today, but the field is required. */
+const SHIPPING_TIER = 'Standard'
+
 export function CheckoutClient() {
   const locale = useLocale()
   const items = useCartStore((s) => s.items)
   const subtotal = useCartStore((s) => s.subtotal())
   const couponDiscount = useCartStore((s) => s.couponDiscount)
+  const couponCode = useCartStore((s) => s.couponCode)
   const clearCart = useCartStore((s) => s.clearCart)
 
+  const user = useAuthStore((s) => s.user)
+
   const [step, setStep] = useState<Step>('address')
-  const [orderNumber] = useState(`YH-2025-${Math.floor(1000 + Math.random() * 8999)}`)
+  // Assigned by the API on success. It used to be invented client-side, so the
+  // number on this screen had no relationship to any real order.
+  const [orderNumber, setOrderNumber] = useState('')
+  const [placing, setPlacing] = useState(false)
+  const [placeError, setPlaceError] = useState('')
 
   const [address, setAddress] = useState<Partial<Address>>({
     fullName: '',
@@ -43,15 +62,108 @@ export function CheckoutClient() {
   const shippingMethod: ShippingMethod = 'standard'
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('jazzcash')
 
-  const shippingCost = subtotal - couponDiscount >= FREE_SHIPPING_THRESHOLD ? 0 : 299
-  const total = Math.max(0, subtotal - couponDiscount + shippingCost)
+  // Shipping and total come from the store, which reads live settings — the
+  // API recomputes both server-side anyway, so these are display-only.
+  const shippingCost = useCartStore((s) => s.shipping())
+  const total = useCartStore((s) => s.total())
 
   const stepIndex = (s: Step) => STEPS.findIndex((st) => st.key === s)
   const currentIndex = stepIndex(step)
 
-  const handlePlaceOrder = () => {
-    clearCart()
-    setStep('success')
+  // begin_checkout must fire once per visit to this screen, not once per
+  // render and not again when the visitor steps back to the address form.
+  const beganCheckout = useRef(false)
+  useEffect(() => {
+    if (beganCheckout.current || items.length === 0) return
+    beganCheckout.current = true
+    trackBeginCheckout(items.map((i) => toAnalyticsItem(i)), {
+      value: total,
+      coupon: couponCode,
+    })
+    // Deliberately not reacting to total/coupon changes — a coupon applied
+    // mid-checkout should not re-open the funnel step.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.length])
+
+  /** Advances a step and emits the funnel event that belongs to leaving it. */
+  const advanceTo = (next: Step) => {
+    if (next === 'payment') {
+      trackAddShippingInfo(items.map((i) => toAnalyticsItem(i)), {
+        value: total,
+        shippingTier: SHIPPING_TIER,
+        coupon: couponCode,
+      })
+    } else if (next === 'review') {
+      trackAddPaymentInfo(items.map((i) => toAnalyticsItem(i)), {
+        value: total,
+        paymentType: paymentMethod,
+        coupon: couponCode,
+      })
+    }
+    setStep(next)
+  }
+
+  const handlePlaceOrder = async () => {
+    setPlacing(true)
+    setPlaceError('')
+
+    try {
+      // Only variant ids and quantities are sent. The API recomputes every
+      // price, discount and shipping cost from the database, so nothing the
+      // client believes about the total can influence what is charged.
+      const order = await placeOrder({
+        items: items.map((i) => ({
+          variantId: i.variantId,
+          quantity: i.quantity,
+          hasGiftWrap: i.hasGiftWrap,
+          giftMessage: i.giftMessage,
+        })),
+        address: {
+          fullName: address.fullName ?? '',
+          phone: address.phone ?? '',
+          addressLine1: address.addressLine1 ?? '',
+          addressLine2: address.addressLine2 || undefined,
+          city: address.city ?? '',
+          province: address.province ?? '',
+          postalCode: address.postalCode || undefined,
+        },
+        paymentMethod,
+        shippingMethod,
+        couponCode,
+        // Guests must be reachable about the order; signed-in customers
+        // already are, via their account.
+        ...(user ? {} : { guestPhone: address.phone ?? '' }),
+      })
+
+      setOrderNumber(order.number)
+
+      // Sent before clearCart(), because the items are read from the store and
+      // clearing first would send an empty purchase. order.number is the
+      // server's id, so GA4's transaction_id deduplication actually works —
+      // a refresh of the success screen cannot invent a second order.
+      trackPurchase(
+        items.map((i) => toAnalyticsItem(i)),
+        {
+          transactionId: order.number,
+          value: total,
+          shipping: shippingCost,
+          coupon: couponCode,
+        },
+      )
+
+      // Only clear once the order actually exists — clearing first would lose
+      // the basket if the request failed.
+      clearCart()
+      setStep('success')
+    } catch (e) {
+      setPlaceError(
+        e instanceof ApiError
+          ? e.message
+          : 'Could not place your order. Please try again.',
+      )
+    } finally {
+      setPlacing(false)
+    }
   }
 
   if (step === 'success') {
@@ -205,7 +317,7 @@ export function CheckoutClient() {
                   </div>
 
                   <button
-                    onClick={() => setStep('payment')}
+                    onClick={() => advanceTo('payment')}
                     className="btn-primary w-full justify-center py-3 mt-2"
                   >
                     Continue to Payment
@@ -284,7 +396,7 @@ export function CheckoutClient() {
                   ))}
 
                   <button
-                    onClick={() => setStep('review')}
+                    onClick={() => advanceTo('review')}
                     className="btn-primary w-full justify-center py-3 mt-2"
                   >
                     Review Order
@@ -340,12 +452,24 @@ export function CheckoutClient() {
                     By placing this order you agree to our Terms & Conditions.
                   </p>
 
+                  {placeError && (
+                    <p
+                      role="alert"
+                      className="text-sm text-red bg-red/5 border border-red/20 rounded-sm px-3 py-2"
+                    >
+                      {placeError}
+                    </p>
+                  )}
+
                   <button
                     onClick={handlePlaceOrder}
-                    className="btn-primary w-full justify-center py-3.5 text-base"
+                    // Disabled while in flight so a double-click cannot place
+                    // two orders and charge twice.
+                    disabled={placing}
+                    className="btn-primary w-full justify-center py-3.5 text-base disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <Lock className="w-4 h-4" />
-                    Place Order — {formatPrice(total)}
+                    {placing ? 'Placing order…' : `Place Order — ${formatPrice(total)}`}
                   </button>
                 </div>
               )}

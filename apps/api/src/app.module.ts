@@ -15,6 +15,8 @@ import { CouponsModule } from './coupons/coupons.module'
 import { BlogModule } from './blog/blog.module'
 import { MediaModule } from './media/media.module'
 import { SearchModule } from './search/search.module'
+import { SettingsModule } from './settings/settings.module'
+import { StockNotificationsModule } from './stock-notifications/stock-notifications.module'
 import { HealthModule } from './health/health.module'
 
 @Module({
@@ -49,6 +51,8 @@ import { HealthModule } from './health/health.module'
     BlogModule,
     MediaModule,
     SearchModule,
+    SettingsModule,
+    StockNotificationsModule,
     HealthModule,
   ],
   providers: [

@@ -5,7 +5,9 @@ import { useLocale } from 'next-intl'
 import { BarChart2, ChevronRight, X, ShoppingCart, Check, Minus } from 'lucide-react'
 import { useCompareStore } from '@/store/compare'
 import { useCartStore } from '@/store/cart'
-import { getProductById } from '@/data/products'
+import { useQuery } from '@tanstack/react-query'
+import { fetchProducts } from '@/lib/api'
+import type { Product } from '@/types'
 import { ProductImage } from '@/components/ui/product-image'
 import { formatPrice, getLowestPrice, cn } from '@/lib/utils'
 
@@ -26,9 +28,17 @@ export default function ComparePage() {
   const addItem = useCartStore((s) => s.addItem)
   const openCart = useCartStore((s) => s.openCart)
 
-  const products = ids.map((id) => getProductById(id)).filter(Boolean)
+  // No bulk by-id endpoint exists, so pull a catalogue page and filter to the
+  // compared ids. Adequate at this catalogue size.
+  const { data } = useQuery({
+    queryKey: ['compare-products'],
+    queryFn: () => fetchProducts({ limit: 100 }),
+    enabled: ids.length > 0,
+    staleTime: 5 * 60 * 1000,
+  })
+  const products = (data?.items ?? []).filter((p) => ids.includes(p.id))
 
-  const getValue = (product: NonNullable<ReturnType<typeof getProductById>>, key: string) => {
+  const getValue = (product: Product, key: string) => {
     switch (key) {
       case 'price':
         return formatPrice(getLowestPrice(product.variants))
@@ -51,7 +61,7 @@ export default function ComparePage() {
     }
   }
 
-  const handleAddToCart = (product: NonNullable<ReturnType<typeof getProductById>>) => {
+  const handleAddToCart = (product: Product) => {
     const variant = product.variants[0]
     if (!variant) return
     addItem({

@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Search, X, TrendingUp, Clock, ArrowRight } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import Link from 'next/link'
-import { searchProducts } from '@/data/products'
+import { searchProducts } from '@/lib/api'
 import { formatPrice, getLowestPrice } from '@/lib/utils'
 
 const TRENDING = ['Umrah Kit', 'Ihram', 'Oud Attar', 'Prayer Mat', 'Ajwa Dates']
@@ -20,7 +21,23 @@ export function SearchDropdown({ onClose, fullscreen }: Props) {
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const results = query.length >= 2 ? searchProducts(query).slice(0, 5) : []
+  // Debounce so a fast typist doesn't fire a request per keystroke. 250ms is
+  // below the threshold where the dropdown feels laggy but well above the
+  // gap between characters in normal typing.
+  const [debounced, setDebounced] = useState('')
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(query), 250)
+    return () => clearTimeout(id)
+  }, [query])
+
+  const { data: results = [], isFetching } = useQuery({
+    queryKey: ['search', debounced],
+    queryFn: () => searchProducts(debounced, 5),
+    enabled: debounced.trim().length >= 2,
+    // Repeat searches within a session are common (typing, backspacing,
+    // retyping), and the catalogue barely moves.
+    staleTime: 5 * 60 * 1000,
+  })
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -81,6 +98,8 @@ export function SearchDropdown({ onClose, fullscreen }: Props) {
               ))}
             </ul>
           </div>
+        ) : isFetching && results.length === 0 ? (
+          <p className="text-sm text-stone text-center py-8">…</p>
         ) : results.length === 0 ? (
           <p className="text-sm text-stone text-center py-8">
             {t('noResults', { query })}

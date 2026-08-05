@@ -23,6 +23,8 @@ export class OrdersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateOrderDto, userId?: string) {
+    const addressId = await this.resolveAddress(dto, userId)
+
     // Validate variants and compute totals
     let subtotal = 0
     const itemSnapshots: Array<{
@@ -90,20 +92,24 @@ export class OrdersService {
 
     const total = afterDiscount + shippingCost
 
-    // Generate order number
-    const year = new Date().getFullYear()
-    const count = await this.prisma.order.count()
-    const number = `YH-${year}-${String(count + 1001).padStart(4, '0')}`
-
-    // Create order in transaction
-    const order = await this.prisma.$transaction(async (tx) => {
+    // Create order in transaction.
+    //
+    // The number is derived inside the retry loop, not once up front. The old
+    // `count() + 1001` had two faults: it counted *all* orders ever rather
+    // than the year's, so numbers drifted across a year boundary, and two
+    // concurrent checkouts read the same count and produced the same number —
+    // one of them then failing on the unique index at the worst moment.
+    //
+    // `number` is `@unique`, so the database is the arbiter: a loser of the
+    // race gets P2002 and simply retries with the next value.
+    const order = await this.createWithOrderNumber(async (tx, number) => {
       const o = await tx.order.create({
         data: {
           number,
           userId,
           guestEmail: dto.guestEmail,
           guestPhone: dto.guestPhone,
-          addressId: dto.addressId,
+          addressId,
           paymentMethod: dto.paymentMethod,
           shippingMethod: dto.shippingMethod ?? 'standard',
           subtotal,
@@ -210,6 +216,138 @@ export class OrdersService {
       averageOrderValue: recentCount > 0 ? Math.round(recentRevenue / recentCount) : 0,
       byStatus: byStatus.map((s) => ({ status: s.status, count: s._count.id })),
     }
+  }
+
+  /**
+   * Determine which address row the order ships to.
+   *
+   * A saved `addressId` is re-checked against the caller: without that, one
+   * customer could pass another's address id and have goods delivered to it.
+   * A guest instead supplies the address inline and we persist it, which is
+   * what makes guest checkout possible at all.
+   */
+  private async resolveAddress(dto: CreateOrderDto, userId?: string): Promise<string> {
+    if (dto.addressId) {
+      const existing = await this.prisma.address.findFirst({
+        where: { id: dto.addressId, ...(userId ? { userId } : {}) },
+        select: { id: true },
+      })
+      if (!existing) throw new BadRequestException('Address not found.')
+      return existing.id
+    }
+
+    if (!dto.address) {
+      throw new BadRequestException('A delivery address is required.')
+    }
+
+    const created = await this.prisma.address.create({
+      // A guest address has no owner; it exists only to be referenced by the
+      // order it was created for.
+      data: { ...dto.address, userId, isDefault: false },
+      select: { id: true },
+    })
+    return created.id
+  }
+
+  /**
+   * Run `work` inside a transaction with a freshly derived `YH-<year>-<n>`
+   * order number, retrying on a unique-constraint collision.
+   *
+   * Retries are bounded: a handful of attempts absorbs realistic checkout
+   * concurrency, and anything beyond that is a genuine fault worth surfacing
+   * rather than looping on.
+   */
+  private async createWithOrderNumber<T>(
+    work: (tx: Prisma.TransactionClient, number: string) => Promise<T>,
+  ): Promise<T> {
+    const year = new Date().getFullYear()
+    const prefix = `YH-${year}-`
+    const MAX_ATTEMPTS = 5
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      // Highest number issued this year, so a new year restarts at 1001 and
+      // deleted rows never cause a number to be reused.
+      const latest = await this.prisma.order.findFirst({
+        where: { number: { startsWith: prefix } },
+        orderBy: { number: 'desc' },
+        select: { number: true },
+      })
+
+      const lastSeq = latest ? parseInt(latest.number.slice(prefix.length), 10) : 1000
+      const next = (Number.isNaN(lastSeq) ? 1000 : lastSeq) + 1 + attempt
+      const number = `${prefix}${String(next).padStart(4, '0')}`
+
+      try {
+        return await this.prisma.$transaction((tx) => work(tx, number))
+      } catch (e) {
+        const isDuplicate =
+          e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002'
+        if (!isDuplicate || attempt === MAX_ATTEMPTS - 1) throw e
+        // else: another checkout took this number — recompute and try again.
+      }
+    }
+
+    throw new BadRequestException('Could not allocate an order number. Please retry.')
+  }
+
+  /**
+   * Public order tracking.
+   *
+   * Order numbers are sequential and therefore guessable, so the number alone
+   * cannot be the credential — previously it was, and it returned the full
+   * order including the delivery address and the customer's name, email and
+   * phone. Walking `YH-2026-1001`, `1002`, … dumped the order table.
+   *
+   * The caller must now also present the email or phone the order was placed
+   * with, and even then only gets fulfilment-relevant fields: no address, no
+   * contact details, no coupon or payment data. A mismatch is reported as a
+   * plain 404 so this cannot be used to test whether a number exists.
+   */
+  async trackByNumber(number: string, contact: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { number },
+      include: {
+        items: { select: { name: true, image: true, quantity: true, tier: true, size: true, color: true } },
+        timeline: { orderBy: { createdAt: 'desc' as const }, select: { status: true, note: true, createdAt: true } },
+        user: { select: { email: true, phone: true } },
+      },
+    })
+
+    const notFound = new NotFoundException(`Order ${number} not found.`)
+    if (!order) throw notFound
+    if (!this.contactMatches(order, contact)) throw notFound
+
+    return {
+      number: order.number,
+      status: order.status,
+      shippingMethod: order.shippingMethod,
+      trackingNumber: order.trackingNumber,
+      total: order.total,
+      createdAt: order.createdAt,
+      items: order.items,
+      timeline: order.timeline,
+    }
+  }
+
+  /**
+   * Emails compare case-insensitively; phones compare on their last 10 digits
+   * so `+92 300 1234567`, `0300-1234567` and `03001234567` all match.
+   */
+  private contactMatches(
+    order: { guestEmail: string | null; guestPhone: string | null; user: { email: string | null; phone: string | null } | null },
+    contact: string,
+  ) {
+    const input = contact.trim()
+    if (!input) return false
+
+    const emails = [order.guestEmail, order.user?.email]
+    if (emails.some((e) => e && e.toLowerCase() === input.toLowerCase())) return true
+
+    const digits = (v: string) => v.replace(/\D/g, '').slice(-10)
+    const inputDigits = digits(input)
+    if (inputDigits.length < 10) return false
+
+    return [order.guestPhone, order.user?.phone].some((p) => p && digits(p) === inputDigits)
   }
 
   async findByNumber(number: string, userId?: string) {

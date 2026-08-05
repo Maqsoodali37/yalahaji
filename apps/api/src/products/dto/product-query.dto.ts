@@ -14,6 +14,10 @@ export class ProductQueryDto {
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() @Min(0) maxPrice?: number
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() @Min(1) rating?: number
   @ApiPropertyOptional() @IsOptional() @Transform(({ value }) => value === 'true') @IsBoolean() inStock?: boolean
+
+  /** `isFeatured` existed on the model with no way to query it, so the
+   *  storefront homepage had no means of asking for its featured grid. */
+  @ApiPropertyOptional() @IsOptional() @Transform(({ value }) => value === 'true') @IsBoolean() featured?: boolean
   @ApiPropertyOptional({ enum: ['popularity', 'newest', 'price_asc', 'price_desc', 'rating'] }) @IsOptional() @IsString() sort?: string
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() @Min(1) page?: number
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() @Min(1) limit?: number

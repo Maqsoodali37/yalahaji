@@ -96,31 +96,31 @@ enum CouponType {
 // ─── User ─────────────────────────────────────────────────────────────────────
 
 model User {
-  id             String    @id @default(uuid())
-  name           String
-  email          String?   @unique
-  phone          String    @unique
-  passwordHash   String?
-  role           Role      @default(customer)
-  isActive       Boolean   @default(true)
-  loyaltyPoints  Int       @default(0)
-  avatar         String?
+  id            String  @id @default(uuid())
+  name          String
+  email         String? @unique
+  phone         String  @unique
+  passwordHash  String?
+  role          Role    @default(customer)
+  isActive      Boolean @default(true)
+  loyaltyPoints Int     @default(0)
+  avatar        String?
 
   // Brute-force protection (staff logins)
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
   lastLoginAt         DateTime?
 
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  addresses      Address[]
-  orders         Order[]
-  reviews        Review[]
-  wishlistItems  Wishlist[]
-  cartItems      CartItem[]
-  notifications  StockNotification[]
-  sessions       Session[]
+  addresses     Address[]
+  orders        Order[]
+  reviews       Review[]
+  wishlistItems Wishlist[]
+  cartItems     CartItem[]
+  notifications StockNotification[]
+  sessions      Session[]
 
   @@index([phone])
   @@index([email])
@@ -130,16 +130,16 @@ model User {
 /// Revocable admin sessions. `tokenHash` is a SHA-256 of the issued JWT —
 /// the raw token is never stored, so a database leak yields nothing usable.
 model Session {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
-  tokenHash String   @unique @db.VarChar(64)
+  tokenHash String    @unique @db.VarChar(64)
   userAgent String?
   ip        String?
   expiresAt DateTime
   revokedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([tokenHash])
@@ -151,7 +151,10 @@ model Session {
 
 model Address {
   id           String   @id @default(uuid())
-  userId       String
+  // Nullable so a guest checkout can persist a delivery address without an
+  // account. Order.addressId is required, so without this guest orders could
+  // never be created despite guestEmail/guestPhone existing for exactly that.
+  userId       String?
   label        String   @default("Home")
   fullName     String
   phone        String
@@ -164,8 +167,8 @@ model Address {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orders       Order[]
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
 
   @@index([userId])
   @@map("addresses")
@@ -174,26 +177,26 @@ model Address {
 // ─── Category ─────────────────────────────────────────────────────────────────
 
 model Category {
-  id           String     @id @default(uuid())
-  slug         String     @unique
-  nameEn       String
-  nameUr       String
-  nameAr       String
-  descEn       String     @db.Text
-  descUr       String     @db.Text
-  descAr       String     @db.Text
-  image        String?
-  icon         String?
-  parentId     String?
-  order        Int        @default(0)
-  featured     Boolean    @default(false)
-  isActive     Boolean    @default(true)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  nameEn    String
+  nameUr    String
+  nameAr    String
+  descEn    String   @db.Text
+  descUr    String   @db.Text
+  descAr    String   @db.Text
+  image     String?
+  icon      String?
+  parentId  String?
+  order     Int      @default(0)
+  featured  Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  parent       Category?  @relation("CategoryTree", fields: [parentId], references: [id])
-  children     Category[] @relation("CategoryTree")
-  products     Product[]
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  products Product[]
 
   @@index([slug])
   @@index([parentId])
@@ -203,45 +206,45 @@ model Category {
 // ─── Product ──────────────────────────────────────────────────────────────────
 
 model Product {
-  id               String           @id @default(uuid())
-  slug             String           @unique
-  sku              String           @unique
-  nameEn           String
-  nameUr           String
-  nameAr           String
-  descEn           String           @db.Text
-  descUr           String           @db.Text
-  descAr           String           @db.Text
-  shortDescEn      String
-  shortDescUr      String
-  shortDescAr      String
-  categoryId       String
-  isKit            Boolean          @default(false)
-  hasGiftWrap      Boolean          @default(false)
-  hasPreOrder      Boolean          @default(false)
-  avgRating        Float            @default(0)
-  reviewCount      Int              @default(0)
-  soldCount        Int              @default(0)
-  isActive         Boolean          @default(true)
-  isFeatured       Boolean          @default(false)
-  metaTitle        String?
-  metaDesc         String?          @db.Text
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  sku         String   @unique
+  nameEn      String
+  nameUr      String
+  nameAr      String
+  descEn      String   @db.Text
+  descUr      String   @db.Text
+  descAr      String   @db.Text
+  shortDescEn String
+  shortDescUr String
+  shortDescAr String
+  categoryId  String
+  isKit       Boolean  @default(false)
+  hasGiftWrap Boolean  @default(false)
+  hasPreOrder Boolean  @default(false)
+  avgRating   Float    @default(0)
+  reviewCount Int      @default(0)
+  soldCount   Int      @default(0)
+  isActive    Boolean  @default(true)
+  isFeatured  Boolean  @default(false)
+  metaTitle   String?
+  metaDesc    String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  category         Category         @relation(fields: [categoryId], references: [id])
-  variants         ProductVariant[]
-  images           ProductMedia[]
-  badges           ProductBadge[]
-  tags             ProductTag[]
-  sizeGuide        SizeGuideEntry[]
-  kitContents      KitContent[]     @relation("KitProduct")
-  kitMember        KitContent[]     @relation("KitMember")
-  reviews          Review[]
-  wishlistItems    Wishlist[]
-  cartItems        CartItem[]
-  orderItems       OrderItem[]
-  stockAlerts      StockNotification[]
+  category      Category            @relation(fields: [categoryId], references: [id])
+  variants      ProductVariant[]
+  images        ProductMedia[]
+  badges        ProductBadge[]
+  tags          ProductTag[]
+  sizeGuide     SizeGuideEntry[]
+  kitContents   KitContent[]        @relation("KitProduct")
+  kitMember     KitContent[]        @relation("KitMember")
+  reviews       Review[]
+  wishlistItems Wishlist[]
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+  stockAlerts   StockNotification[]
 
   @@index([slug])
   @@index([categoryId])
@@ -250,25 +253,25 @@ model Product {
 }
 
 model ProductVariant {
-  id                String      @id @default(uuid())
+  id                String   @id @default(uuid())
   productId         String
-  sku               String      @unique
+  sku               String   @unique
   tier              Tier
   size              String?
   color             String?
   colorHex          String?
   scent             String?
-  price             Int         // stored in paisas (×100) for precision
+  price             Int // stored in paisas (×100) for precision
   compareAtPrice    Int?
-  stock             Int         @default(0)
-  lowStockThreshold Int         @default(10)
-  isActive          Boolean     @default(true)
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  stock             Int      @default(0)
+  lowStockThreshold Int      @default(10)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  product           Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
-  cartItems         CartItem[]
-  orderItems        OrderItem[]
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  cartItems  CartItem[]
+  orderItems OrderItem[]
 
   @@index([productId])
   @@index([sku])
@@ -285,29 +288,29 @@ model ProductMedia {
   order     Int       @default(0)
   createdAt DateTime  @default(now())
 
-  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([productId])
   @@map("product_media")
 }
 
 model ProductBadge {
-  id        String  @id @default(uuid())
+  id        String @id @default(uuid())
   productId String
-  badge     String  // new | hot | sale | bestseller | limited
+  badge     String // new | hot | sale | bestseller | limited
 
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([productId, badge])
   @@map("product_badges")
 }
 
 model ProductTag {
-  id        String  @id @default(uuid())
+  id        String @id @default(uuid())
   productId String
   tag       String
 
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([productId, tag])
   @@index([tag])
@@ -325,20 +328,20 @@ model SizeGuideEntry {
   fabric    String?
   order     Int     @default(0)
 
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@map("size_guide_entries")
 }
 
 model KitContent {
-  id          String  @id @default(uuid())
-  kitId       String
-  memberId    String
-  quantity    Int     @default(1)
-  tier        Tier    @default(Standard)
+  id       String @id @default(uuid())
+  kitId    String
+  memberId String
+  quantity Int    @default(1)
+  tier     Tier   @default(Standard)
 
-  kit         Product @relation("KitProduct", fields: [kitId], references: [id], onDelete: Cascade)
-  member      Product @relation("KitMember",  fields: [memberId], references: [id])
+  kit    Product @relation("KitProduct", fields: [kitId], references: [id], onDelete: Cascade)
+  member Product @relation("KitMember", fields: [memberId], references: [id])
 
   @@unique([kitId, memberId])
   @@map("kit_contents")
@@ -347,20 +350,20 @@ model KitContent {
 // ─── Cart ─────────────────────────────────────────────────────────────────────
 
 model CartItem {
-  id           String         @id @default(uuid())
-  userId       String?
-  sessionId    String?        // for guest carts
-  productId    String
-  variantId    String
-  quantity     Int            @default(1)
-  hasGiftWrap  Boolean        @default(false)
-  giftMessage  String?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id          String   @id @default(uuid())
+  userId      String?
+  sessionId   String? // for guest carts
+  productId   String
+  variantId   String
+  quantity    Int      @default(1)
+  hasGiftWrap Boolean  @default(false)
+  giftMessage String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  user         User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product      Product        @relation(fields: [productId], references: [id])
-  variant      ProductVariant @relation(fields: [variantId], references: [id])
+  user    User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [productId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
 
   @@index([userId])
   @@index([sessionId])
@@ -370,33 +373,33 @@ model CartItem {
 // ─── Order ────────────────────────────────────────────────────────────────────
 
 model Order {
-  id              String         @id @default(uuid())
-  number          String         @unique  // YH-2025-XXXX
-  userId          String?
-  guestEmail      String?
-  guestPhone      String?
-  addressId       String?
-  status          OrderStatus    @default(pending)
-  paymentMethod   PaymentMethod
-  paymentStatus   PaymentStatus  @default(unpaid)
-  shippingMethod  ShippingMethod @default(standard)
-  subtotal        Int            // paisas
-  shippingCost    Int            @default(0)
-  discount        Int            @default(0)
-  tax             Int            @default(0)
-  total           Int
-  couponId        String?
-  trackingNumber  String?
-  notes           String?        @db.Text
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id             String         @id @default(uuid())
+  number         String         @unique // YH-2025-XXXX
+  userId         String?
+  guestEmail     String?
+  guestPhone     String?
+  addressId      String?
+  status         OrderStatus    @default(pending)
+  paymentMethod  PaymentMethod
+  paymentStatus  PaymentStatus  @default(unpaid)
+  shippingMethod ShippingMethod @default(standard)
+  subtotal       Int // paisas
+  shippingCost   Int            @default(0)
+  discount       Int            @default(0)
+  tax            Int            @default(0)
+  total          Int
+  couponId       String?
+  trackingNumber String?
+  notes          String?        @db.Text
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
-  user            User?          @relation(fields: [userId], references: [id])
-  address         Address?       @relation(fields: [addressId], references: [id])
-  coupon          Coupon?        @relation(fields: [couponId], references: [id])
-  items           OrderItem[]
-  timeline        OrderTimeline[]
-  returns         Return[]
+  user     User?           @relation(fields: [userId], references: [id])
+  address  Address?        @relation(fields: [addressId], references: [id])
+  coupon   Coupon?         @relation(fields: [couponId], references: [id])
+  items    OrderItem[]
+  timeline OrderTimeline[]
+  returns  Return[]
 
   @@index([userId])
   @@index([number])
@@ -405,24 +408,24 @@ model Order {
 }
 
 model OrderItem {
-  id             String         @id @default(uuid())
-  orderId        String
-  productId      String
-  variantId      String
-  name           String         // snapshot at time of order
-  image          String?
-  tier           Tier
-  size           String?
-  color          String?
-  scent          String?
-  price          Int            // paisas, snapshot
-  quantity       Int
-  hasGiftWrap    Boolean        @default(false)
-  giftMessage    String?
+  id          String  @id @default(uuid())
+  orderId     String
+  productId   String
+  variantId   String
+  name        String // snapshot at time of order
+  image       String?
+  tier        Tier
+  size        String?
+  color       String?
+  scent       String?
+  price       Int // paisas, snapshot
+  quantity    Int
+  hasGiftWrap Boolean @default(false)
+  giftMessage String?
 
-  order          Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product        Product        @relation(fields: [productId], references: [id])
-  variant        ProductVariant @relation(fields: [variantId], references: [id])
+  order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [productId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
 
   @@index([orderId])
   @@map("order_items")
@@ -435,7 +438,7 @@ model OrderTimeline {
   note      String?
   createdAt DateTime    @default(now())
 
-  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
   @@map("order_timeline")
@@ -453,7 +456,7 @@ model Return {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  order     Order        @relation(fields: [orderId], references: [id])
+  order Order @relation(fields: [orderId], references: [id])
 
   @@index([orderId])
   @@map("returns")
@@ -466,7 +469,7 @@ model Review {
   productId String
   userId    String?
   author    String
-  rating    Int      // 1–5
+  rating    Int // 1–5
   title     String
   body      String   @db.Text
   images    String?  @db.Text // JSON array of URLs
@@ -477,8 +480,8 @@ model Review {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  user      User?    @relation(fields: [userId], references: [id])
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id])
 
   @@index([productId])
   @@index([approved])
@@ -493,8 +496,8 @@ model Wishlist {
   productId String
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([userId, productId])
   @@map("wishlists")
@@ -506,9 +509,9 @@ model Coupon {
   id           String     @id @default(uuid())
   code         String     @unique
   type         CouponType @default(percentage)
-  value        Int        // % or paisas
-  minOrderAmt  Int?       // minimum order amount in paisas
-  maxDiscount  Int?       // cap for percentage coupons
+  value        Int // % or paisas
+  minOrderAmt  Int? // minimum order amount in paisas
+  maxDiscount  Int? // cap for percentage coupons
   usageLimit   Int?
   usedCount    Int        @default(0)
   perUserLimit Int?
@@ -518,7 +521,7 @@ model Coupon {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  orders       Order[]
+  orders Order[]
 
   @@index([code])
   @@map("coupons")
@@ -534,8 +537,8 @@ model StockNotification {
   notified  Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  user      User?    @relation(fields: [userId], references: [id])
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id])
 
   @@index([productId, notified])
   @@map("stock_notifications")
@@ -544,31 +547,31 @@ model StockNotification {
 // ─── Blog ─────────────────────────────────────────────────────────────────────
 
 model BlogPost {
-  id          String       @id @default(uuid())
-  slug        String       @unique
-  titleEn     String
-  titleUr     String
-  titleAr     String
-  excerptEn   String       @db.Text
-  excerptUr   String       @db.Text
-  excerptAr   String       @db.Text
-  bodyEn      String       @db.LongText
-  bodyUr      String       @db.LongText
-  bodyAr      String       @db.LongText
-  category    BlogCategory
-  coverImage  String?
-  author      String
+  id           String       @id @default(uuid())
+  slug         String       @unique
+  titleEn      String
+  titleUr      String
+  titleAr      String
+  excerptEn    String       @db.Text
+  excerptUr    String       @db.Text
+  excerptAr    String       @db.Text
+  bodyEn       String       @db.LongText
+  bodyUr       String       @db.LongText
+  bodyAr       String       @db.LongText
+  category     BlogCategory
+  coverImage   String?
+  author       String
   authorAvatar String?
-  readingTime Int          @default(5)
-  featured    Boolean      @default(false)
-  published   Boolean      @default(false)
-  publishedAt DateTime?
-  metaTitle   String?
-  metaDesc    String?      @db.Text
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  readingTime  Int          @default(5)
+  featured     Boolean      @default(false)
+  published    Boolean      @default(false)
+  publishedAt  DateTime?
+  metaTitle    String?
+  metaDesc     String?      @db.Text
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
-  tags        BlogTag[]
+  tags BlogTag[]
 
   @@index([slug])
   @@index([published, publishedAt])
@@ -576,11 +579,11 @@ model BlogPost {
 }
 
 model BlogTag {
-  id     String   @id @default(uuid())
+  id     String @id @default(uuid())
   postId String
   tag    String
 
-  post   BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@unique([postId, tag])
   @@map("blog_tags")

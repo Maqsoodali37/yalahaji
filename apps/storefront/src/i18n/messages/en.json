@@ -331,5 +331,13 @@
     "priceLow": "Price: Low to High",
     "priceHigh": "Price: High to Low",
     "rating": "Top Rated"
+  },
+  "consent": {
+    "title": "We use cookies",
+    "description": "We use analytics cookies to understand how our store is used and to improve your shopping experience. No cookies are set until you accept.",
+    "learnMore": "Learn more",
+    "accept": "Accept",
+    "decline": "Decline",
+    "dismiss": "Dismiss"
   }
 }

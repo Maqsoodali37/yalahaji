@@ -2,6 +2,7 @@ import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } f
 import { ApiTags, ApiCookieAuth, ApiOperation } from '@nestjs/swagger'
 import { BlogService } from './blog.service'
 import { CreateBlogPostDto } from './dto/create-blog-post.dto'
+import { UpdateBlogPostDto } from './dto/update-blog-post.dto'
 import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard'
 import { RolesGuard } from '../auth/roles.guard'
 import { Roles, STAFF_MANAGE } from '../auth/roles.decorator'
@@ -24,7 +25,15 @@ export class BlogController {
     return this.blogService.findAll(false, +page, +limit)
   }
 
+  @Get('admin/preview/:slug')
+  @UseGuards(AdminJwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiCookieAuth()
+  @ApiOperation({ summary: 'Admin: preview a post by slug, published or not' })
+  previewOne(@Param('slug') slug: string) {
+    return this.blogService.findBySlug(slug, true)
+  }
+
   @Get(':slug')
+  @ApiOperation({ summary: 'Get a published post by slug' })
   findOne(@Param('slug') slug: string) { return this.blogService.findBySlug(slug) }
 
   @Post()
@@ -35,7 +44,7 @@ export class BlogController {
 
   @Patch(':id')
   @UseGuards(AdminJwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiCookieAuth()
-  update(@Param('id') id: string, @Body() dto: Partial<CreateBlogPostDto>) {
+  update(@Param('id') id: string, @Body() dto: UpdateBlogPostDto) {
     return this.blogService.update(id, dto)
   }
 

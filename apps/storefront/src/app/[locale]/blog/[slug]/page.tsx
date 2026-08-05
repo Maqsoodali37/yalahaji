@@ -2,15 +2,17 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getLocale } from 'next-intl/server'
 import { Clock, ChevronRight, BookOpen } from 'lucide-react'
-import { blogPosts } from '@/data/blog'
+import { fetchBlogPostBySlug, fetchBlogPostsByCategory } from '@/lib/api'
 
 export default async function BlogArticlePage({ params }: { params: Promise<{ slug: string }> }) {
   const locale = await getLocale()
   const { slug } = await params
-  const post = blogPosts.find((p) => p.slug === slug)
+  const post = await fetchBlogPostBySlug(slug)
   if (!post) notFound()
 
-  const related = blogPosts.filter((p) => p.id !== post.id && p.category === post.category).slice(0, 3)
+  const related = (await fetchBlogPostsByCategory(post.category))
+    .filter((p) => p.id !== post.id)
+    .slice(0, 3)
   const body = post.body.en
 
   // Extract simple headings for TOC

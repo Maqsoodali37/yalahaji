@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { getProductBySlug, getRelatedProducts } from '@/data/products'
-import { getReviewsByProduct } from '@/data/reviews'
+import { fetchProductBySlug, fetchRelatedProducts, fetchProductReviews } from '@/lib/api'
 import { ProductDetailClient } from '@/components/product/product-detail-client'
 import { ProductJsonLd } from '@/components/seo/json-ld'
 import {
@@ -29,7 +28,7 @@ function truncate(text: string, max = 160): string {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { locale: raw, slug } = await params
   const locale = asLocale(raw)
-  const product = getProductBySlug(slug)
+  const product = await fetchProductBySlug(slug)
 
   // notFound() belongs in the page, not here — return no-index metadata so a
   // stale link never gets indexed while the 404 renders.
@@ -101,11 +100,19 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ProductPage({ params }: Props) {
   const { locale: raw, slug } = await params
   const locale = asLocale(raw)
-  const product = getProductBySlug(slug)
+
+  // generateMetadata already fetched this slug; Next dedupes identical fetches
+  // within a render pass, so this does not cost a second round trip.
+  const product = await fetchProductBySlug(slug)
   if (!product) notFound()
 
-  const reviews = getReviewsByProduct(product.id)
-  const related = getRelatedProducts(product)
+  // Reviews and related products both key off the product id, so they can
+  // only start once it resolves — but they don't depend on each other.
+  const [reviewPage, related] = await Promise.all([
+    fetchProductReviews(product.id),
+    fetchRelatedProducts(product.id),
+  ])
+  const reviews = reviewPage.items
 
   return (
     <>

@@ -71,7 +71,10 @@ const config: Config = {
       },
       fontFamily: {
         sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
-        serif: ['Instrument Serif', 'Georgia', 'serif'],
+        // `font-serif` now inherits rather than switching face — see the
+        // .serif rule in globals.css. Kept as a token so existing markup
+        // using font-serif keeps compiling.
+        serif: ['unset'],
       },
       borderRadius: {
         sm: '8px',

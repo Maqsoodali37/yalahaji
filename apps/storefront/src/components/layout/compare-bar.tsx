@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { useLocale } from 'next-intl'
 import { X, BarChart2 } from 'lucide-react'
 import { useCompareStore } from '@/store/compare'
-import { getProductById } from '@/data/products'
+import { useQuery } from '@tanstack/react-query'
+import { fetchProducts } from '@/lib/api'
 import { ProductImage } from '@/components/ui/product-image'
 
 export function CompareBar() {
@@ -14,7 +15,13 @@ export function CompareBar() {
 
   if (n === 0) return null
 
-  const products = ids.map((id) => getProductById(id)).filter(Boolean)
+  const { data } = useQuery({
+    queryKey: ['compare-products'],
+    queryFn: () => fetchProducts({ limit: 100 }),
+    enabled: ids.length > 0,
+    staleTime: 5 * 60 * 1000,
+  })
+  const products = (data?.items ?? []).filter((p) => ids.includes(p.id))
 
   return (
     <div className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-line shadow-lg">

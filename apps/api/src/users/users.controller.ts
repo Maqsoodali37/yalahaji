@@ -3,6 +3,7 @@ import { ApiTags, ApiBearerAuth, ApiCookieAuth, ApiOperation } from '@nestjs/swa
 import { UsersService } from './users.service'
 import { UpdateProfileDto } from './dto/update-profile.dto'
 import { CreateAddressDto } from './dto/create-address.dto'
+import { UpdateAddressDto } from './dto/update-address.dto'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard'
 import { RolesGuard } from '../auth/roles.guard'
@@ -51,7 +52,7 @@ export class UsersController {
   @Patch('me/addresses/:id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  updateAddress(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: Partial<CreateAddressDto>) {
+  updateAddress(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: UpdateAddressDto) {
     return this.usersService.updateAddress(id, user.id, dto)
   }
 

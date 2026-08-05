@@ -4,10 +4,11 @@ import Link from 'next/link'
 import { useLocale, useTranslations } from 'next-intl'
 import { ShoppingBag, Trash2, Plus, Minus, Gift, Tag, ArrowRight, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { fetchFeaturedProducts } from '@/lib/api'
 import { useCartStore } from '@/store/cart'
-import { formatPrice, FREE_SHIPPING_THRESHOLD } from '@/lib/utils'
+import { formatPrice } from '@/lib/utils'
 import { ProductCard } from '@/components/shop/product-card'
-import { getFeaturedProducts } from '@/data/products'
 import { ProductImage } from '@/components/ui/product-image'
 
 export function CartPageClient() {
@@ -29,11 +30,19 @@ export function CartPageClient() {
   const applyCoupon = useCartStore((s) => s.applyCoupon)
   const removeCoupon = useCartStore((s) => s.removeCoupon)
 
-  const amountUntilFree = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal)
-  const suggestedProducts = getFeaturedProducts().slice(0, 4)
+  // Threshold comes from the API now, not a constant that disagreed with it.
+  const freeShippingThreshold = useCartStore((s) => s.settings.freeShippingThreshold)
+  const amountUntilFree = Math.max(0, freeShippingThreshold - subtotal)
 
-  const handleApplyCoupon = () => {
-    const success = applyCoupon(couponInput)
+  const { data: suggestedProducts = [] } = useQuery({
+    queryKey: ['featured-products', 4],
+    queryFn: () => fetchFeaturedProducts(4),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const handleApplyCoupon = async () => {
+    // Server-validated now, so this is a round trip rather than a table lookup.
+    const success = await applyCoupon(couponInput)
     if (success) {
       setCouponSuccess(true)
       setCouponError('')

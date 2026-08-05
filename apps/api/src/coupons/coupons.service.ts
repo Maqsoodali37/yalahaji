@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateCouponDto } from './dto/create-coupon.dto'
+import { UpdateCouponDto } from './dto/update-coupon.dto'
 
 @Injectable()
 export class CouponsService {
@@ -41,7 +42,7 @@ export class CouponsService {
     return this.prisma.coupon.create({ data: { ...dto, code: dto.code.toUpperCase() } })
   }
 
-  async update(id: string, dto: Partial<CreateCouponDto>) {
+  async update(id: string, dto: UpdateCouponDto) {
     const coupon = await this.prisma.coupon.findUnique({ where: { id } })
     if (!coupon) throw new NotFoundException('Coupon not found.')
     return this.prisma.coupon.update({ where: { id }, data: dto })

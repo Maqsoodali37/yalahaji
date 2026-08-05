@@ -1,12 +1,12 @@
 import Link from 'next/link'
 import { useLocale } from 'next-intl'
-import { getFeaturedBlogPosts } from '@/data/blog'
+import { fetchFeaturedBlogPosts } from '@/lib/api'
 import { Clock, ArrowRight } from 'lucide-react'
 import { SafeImage } from '@/components/ui/safe-image'
 
-export function BlogPreview() {
+export async function BlogPreview() {
   const locale = useLocale()
-  const posts = getFeaturedBlogPosts()
+  const posts = await fetchFeaturedBlogPosts()
 
   return (
     <section className="section-pad bg-paper">

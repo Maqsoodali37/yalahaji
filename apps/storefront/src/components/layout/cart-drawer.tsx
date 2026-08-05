@@ -5,7 +5,7 @@ import { X, ShoppingBag, Trash2, Plus, Minus, Gift } from 'lucide-react'
 import Link from 'next/link'
 import { useCartStore } from '@/store/cart'
 import { ProductImage } from '@/components/ui/product-image'
-import { formatPrice, FREE_SHIPPING_THRESHOLD } from '@/lib/utils'
+import { formatPrice } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
 export function CartDrawer() {
@@ -23,7 +23,8 @@ export function CartDrawer() {
   const removeItem = useCartStore((s) => s.removeItem)
   const updateQuantity = useCartStore((s) => s.updateQuantity)
 
-  const amountUntilFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal)
+  const freeShippingThreshold = useCartStore((s) => s.settings.freeShippingThreshold)
+  const amountUntilFreeShipping = Math.max(0, freeShippingThreshold - subtotal)
 
   if (!isOpen) return null
 

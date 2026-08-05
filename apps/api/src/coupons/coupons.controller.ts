@@ -2,6 +2,8 @@ import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } f
 import { ApiTags, ApiCookieAuth, ApiOperation } from '@nestjs/swagger'
 import { CouponsService } from './coupons.service'
 import { CreateCouponDto } from './dto/create-coupon.dto'
+import { UpdateCouponDto } from './dto/update-coupon.dto'
+import { ValidateCouponDto } from './dto/validate-coupon.dto'
 import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard'
 import { RolesGuard } from '../auth/roles.guard'
 import { Roles, STAFF_MANAGE } from '../auth/roles.decorator'
@@ -13,8 +15,8 @@ export class CouponsController {
 
   @Post('validate')
   @ApiOperation({ summary: 'Validate a coupon code' })
-  validate(@Body() body: { code: string; subtotal: number }) {
-    return this.couponsService.validate(body.code, body.subtotal)
+  validate(@Body() dto: ValidateCouponDto) {
+    return this.couponsService.validate(dto.code, dto.subtotal)
   }
 
   @Get()
@@ -28,7 +30,7 @@ export class CouponsController {
 
   @Patch(':id')
   @UseGuards(AdminJwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiCookieAuth()
-  update(@Param('id') id: string, @Body() dto: Partial<CreateCouponDto>) { return this.couponsService.update(id, dto) }
+  update(@Param('id') id: string, @Body() dto: UpdateCouponDto) { return this.couponsService.update(id, dto) }
 
   @Delete(':id')
   @UseGuards(AdminJwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiCookieAuth()

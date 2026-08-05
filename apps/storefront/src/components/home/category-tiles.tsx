@@ -1,12 +1,12 @@
 import Link from 'next/link'
 import { useLocale } from 'next-intl'
 import { ArrowRight } from 'lucide-react'
-import { getFeaturedCategories } from '@/data/categories'
+import { fetchFeaturedCategories } from '@/lib/api'
 import { SafeImage } from '@/components/ui/safe-image'
 
-export function CategoryTiles() {
+export async function CategoryTiles() {
   const locale = useLocale()
-  const categories = getFeaturedCategories()
+  const categories = await fetchFeaturedCategories()
 
   return (
     <section className="section-pad">

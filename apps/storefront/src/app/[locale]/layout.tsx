@@ -10,8 +10,11 @@ import { CartDrawer } from '@/components/layout/cart-drawer'
 import { WhatsAppBubble } from '@/components/layout/whatsapp-bubble'
 import { MobileBottomBar } from '@/components/layout/mobile-bottom-bar'
 import { CompareBar } from '@/components/layout/compare-bar'
+import { CartBootstrap } from '@/components/cart-bootstrap'
 import { RouteProgress } from '@/components/layout/route-progress'
 import { OrganizationJsonLd } from '@/components/seo/json-ld'
+import { GoogleAnalytics } from '@/components/analytics/google-analytics'
+import { ConsentBanner } from '@/components/analytics/consent-banner'
 import {
   SITE_URL,
   SITE_NAME,
@@ -137,15 +140,24 @@ export default async function LocaleLayout({ children, params }: Props) {
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/*
+          Instrument Serif was dropped from the type scale — .serif now inherits
+          the body font — so it is no longer requested here.
+        */}
         <link
-          href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
           rel="stylesheet"
         />
+        {/* Consent Mode defaults must be in the dataLayer before gtag.js runs. */}
+        <GoogleAnalytics />
       </head>
       <body>
         <OrganizationJsonLd locale={locale} />
         <NextIntlClientProvider messages={messages}>
           <Providers>
+            {/* Reconciles the persisted cart against the server and loads
+                shipping settings once the app is interactive. */}
+            <CartBootstrap />
             <RouteProgress />
             <Header />
             <main id="main-content" className="min-h-screen">
@@ -156,6 +168,7 @@ export default async function LocaleLayout({ children, params }: Props) {
             <CompareBar />
             <WhatsAppBubble />
             <MobileBottomBar />
+            <ConsentBanner />
           </Providers>
         </NextIntlClientProvider>
       </body>

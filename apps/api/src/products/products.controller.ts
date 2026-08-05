@@ -68,8 +68,10 @@ export class ProductsController {
   }
 
   @Get(':id/related')
-  findRelated(@Param('id') id: string) {
-    return this.productsService.findRelated(id)
+  findRelated(@Param('id') id: string, @Query('limit') limit = '4') {
+    // The limit was previously ignored, so every caller got exactly 4
+    // regardless of what it asked for.
+    return this.productsService.findRelated(id, Math.min(+limit || 4, 24))
   }
 
   @Post()

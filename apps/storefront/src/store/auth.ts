@@ -1,46 +1,55 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { User } from '@/types'
-
-// Mock user — replace with real API call when backend is ready
-const MOCK_USER: User = {
-  id: 'user-001',
-  name: 'Muhammad Ali',
-  email: 'ali@example.com',
-  phone: '+92 300 1234567',
-  addresses: [
-    {
-      id: 'addr-001',
-      label: 'Home',
-      fullName: 'Muhammad Ali',
-      phone: '+92 300 1234567',
-      addressLine1: 'House 42, Street 5, DHA Phase 3',
-      city: 'Lahore',
-      province: 'Punjab',
-      postalCode: '54000',
-      isDefault: true,
-    },
-  ],
-  wishlistIds: [],
-  loyaltyPoints: 120,
-  createdAt: '2024-01-01T00:00:00Z',
-}
-
-// Mock credentials — any phone + password works in dev; replace with real auth
-const MOCK_CREDENTIALS = {
-  phone: '+92 300 1234567',
-  password: 'password123',
-}
+import {
+  login as apiLogin,
+  register as apiRegister,
+  fetchMe,
+  logout as apiLogout,
+  normalisePhone,
+  isValidPakistaniPhone,
+  getToken,
+  mergeGuestCart,
+  ApiError,
+} from '@/lib/api'
 
 interface AuthStore {
   user: User | null
   isLoading: boolean
+  /** True until the persisted session has been checked against the server. */
+  isHydrating: boolean
   error: string | null
 
-  login: (phone: string, password: string) => Promise<boolean>
+  login: (identifier: string, password: string) => Promise<boolean>
   register: (name: string, phone: string, email: string, password: string) => Promise<boolean>
   logout: () => void
   clearError: () => void
+  /** Re-validate the persisted user against the API. Runs once on rehydrate. */
+  hydrate: () => Promise<void>
+  setUser: (user: User) => void
+}
+
+/**
+ * The sign-in field accepts either a phone number or an email. Only normalise
+ * when it looks like a phone — running a Pakistani-phone transform over
+ * "ali@example.com" would mangle it into something that can never match.
+ */
+function toIdentifier(input: string): string {
+  const trimmed = input.trim()
+  if (trimmed.includes('@')) return trimmed
+  return isValidPakistaniPhone(trimmed) ? normalisePhone(trimmed) : trimmed
+}
+
+function messageFor(e: unknown, fallback: string): string {
+  if (e instanceof ApiError) {
+    // A dropped connection and a rejected password are different problems and
+    // deserve different wording — "invalid credentials" on a network failure
+    // sends people resetting a password that was never wrong.
+    if (e.status === 0) return e.message
+    if (e.status === 429) return 'Too many attempts. Please wait a minute and try again.'
+    return e.message || fallback
+  }
+  return fallback
 }
 
 export const useAuthStore = create<AuthStore>()(
@@ -48,51 +57,117 @@ export const useAuthStore = create<AuthStore>()(
     (set) => ({
       user: null,
       isLoading: false,
+      isHydrating: true,
       error: null,
 
-      login: async (phone, password) => {
+      login: async (identifier, password) => {
         set({ isLoading: true, error: null })
-        // Simulate network delay
-        await new Promise((r) => setTimeout(r, 800))
-
-        // Accept any non-empty credentials in dev
-        if (phone.trim() && password.trim()) {
-          const user = { ...MOCK_USER, phone: phone.trim() }
+        try {
+          const user = await apiLogin(toIdentifier(identifier), password)
           set({ user, isLoading: false, error: null })
-          return true
-        }
 
-        set({ isLoading: false, error: 'Invalid phone number or password.' })
-        return false
+          // Fold anything added while browsing as a guest into the real cart.
+          // A failure here must not fail the login — the shopper is signed in
+          // either way, and a missed merge is recoverable.
+          try {
+            await mergeGuestCart()
+          } catch {
+            /* ignore */
+          }
+
+          return true
+        } catch (e) {
+          set({ isLoading: false, error: messageFor(e, 'Invalid phone number or password.') })
+          return false
+        }
       },
 
       register: async (name, phone, email, password) => {
         set({ isLoading: true, error: null })
-        await new Promise((r) => setTimeout(r, 800))
 
-        if (name.trim() && phone.trim() && password.trim()) {
-          const user: User = {
-            ...MOCK_USER,
-            name: name.trim(),
-            phone: phone.trim(),
-            email: email.trim() || MOCK_USER.email,
-            loyaltyPoints: 0,
-          }
-          set({ user, isLoading: false, error: null })
-          return true
+        // Validate before the round trip so the customer gets a usable message
+        // instead of the API's raw regex complaint.
+        if (!isValidPakistaniPhone(phone)) {
+          set({
+            isLoading: false,
+            error: 'Enter a valid Pakistani mobile number, e.g. 0300 1234567.',
+          })
+          return false
+        }
+        if (password.length < 8) {
+          set({ isLoading: false, error: 'Password must be at least 8 characters.' })
+          return false
         }
 
-        set({ isLoading: false, error: 'Please fill in all required fields.' })
-        return false
+        try {
+          const user = await apiRegister({
+            name: name.trim(),
+            phone: normalisePhone(phone),
+            email: email.trim() || undefined,
+            password,
+          })
+          set({ user, isLoading: false, error: null })
+
+          try {
+            await mergeGuestCart()
+          } catch {
+            /* ignore */
+          }
+
+          return true
+        } catch (e) {
+          set({
+            isLoading: false,
+            error: messageFor(e, 'Could not create your account. Please try again.'),
+          })
+          return false
+        }
       },
 
-      logout: () => set({ user: null, error: null }),
+      logout: () => {
+        apiLogout()
+        set({ user: null, error: null })
+      },
 
       clearError: () => set({ error: null }),
+
+      setUser: (user) => set({ user }),
+
+      /**
+       * The persisted user is only a cache for first paint; the token is the
+       * actual credential. On every load we confirm it still works — a
+       * deactivated account or an expired token must not keep rendering a
+       * signed-in header indefinitely.
+       */
+      hydrate: async () => {
+        if (!getToken()) {
+          set({ user: null, isHydrating: false })
+          return
+        }
+        try {
+          const user = await fetchMe()
+          set({ user, isHydrating: false })
+        } catch (e) {
+          if (e instanceof ApiError && e.isAuthError) {
+            apiLogout()
+            set({ user: null, isHydrating: false })
+          } else {
+            // Network blip: keep the cached user rather than signing someone
+            // out because their connection dropped for a moment.
+            set({ isHydrating: false })
+          }
+        }
+      },
     }),
     {
       name: 'yalahaji-auth',
       partialize: (state) => ({ user: state.user }),
+      // `isHydrating` is not persisted, so without this a restored store would
+      // sit at its initial `true` forever and gate the UI on a check that
+      // never ran.
+      onRehydrateStorage: () => (state) => {
+        state?.hydrate()
+      },
     }
   )
 )

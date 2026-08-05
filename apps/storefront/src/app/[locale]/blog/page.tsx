@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { getLocale } from 'next-intl/server'
 import { Clock, ChevronRight } from 'lucide-react'
-import { blogPosts, blogCategories } from '@/data/blog'
+import { fetchBlogPosts } from '@/lib/api'
+import { blogCategories } from '@/data/blog'
 import { SafeImage } from '@/components/ui/safe-image'
 
 export default async function BlogPage({
@@ -12,6 +13,8 @@ export default async function BlogPage({
   const locale = await getLocale()
   const { category } = await searchParams
   const activeCategory = category ?? 'all'
+
+  const { items: blogPosts } = await fetchBlogPosts(1, 50)
 
   const filtered =
     activeCategory === 'all'

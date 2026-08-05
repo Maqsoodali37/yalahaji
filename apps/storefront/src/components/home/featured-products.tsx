@@ -1,11 +1,11 @@
 import Link from 'next/link'
 import { useLocale } from 'next-intl'
-import { getFeaturedProducts } from '@/data/products'
+import { fetchFeaturedProducts } from '@/lib/api'
 import { ProductCard } from '@/components/shop/product-card'
 
-export function FeaturedProducts() {
+export async function FeaturedProducts() {
   const locale = useLocale()
-  const products = getFeaturedProducts()
+  const products = await fetchFeaturedProducts()
 
   return (
     <section className="section-pad bg-paper">
