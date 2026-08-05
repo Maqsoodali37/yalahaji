@@ -1,10 +1,15 @@
 import Link from 'next/link'
-import { useLocale } from 'next-intl'
+import { getLocale } from 'next-intl/server'
 import { fetchFeaturedProducts } from '@/lib/api'
 import { ProductCard } from '@/components/shop/product-card'
 
+// getLocale(), not useLocale(). next-intl's hooks work in *synchronous* server
+// components, but calling one inside an `async` component makes React suspend
+// on a thenable it can no longer match up, and the RSC render dies with
+// "Expected a suspended thenable" -> "failed to pipe response".
+// See facebook/react#31648.
 export async function FeaturedProducts() {
-  const locale = useLocale()
+  const locale = await getLocale()
   const products = await fetchFeaturedProducts()
 
   return (

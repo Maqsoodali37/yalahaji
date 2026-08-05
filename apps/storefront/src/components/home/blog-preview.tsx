@@ -1,11 +1,13 @@
 import Link from 'next/link'
-import { useLocale } from 'next-intl'
+import { getLocale } from 'next-intl/server'
 import { fetchFeaturedBlogPosts } from '@/lib/api'
 import { Clock, ArrowRight } from 'lucide-react'
 import { SafeImage } from '@/components/ui/safe-image'
 
+// getLocale(), not useLocale() — a next-intl hook inside an `async` server
+// component breaks the RSC render. See the note in featured-products.tsx.
 export async function BlogPreview() {
-  const locale = useLocale()
+  const locale = await getLocale()
   const posts = await fetchFeaturedBlogPosts()
 
   return (

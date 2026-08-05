@@ -3,24 +3,33 @@ import { GA_MEASUREMENT_ID, isAnalyticsEnabled, CONSENT_STORAGE_KEY } from '@/li
 import { PageViewTracker } from './page-view-tracker'
 
 /**
- * Mounts gtag.js with Consent Mode v2.
+ * Google Analytics 4 with Consent Mode v2, split across the document.
  *
- * Renders nothing at all when NEXT_PUBLIC_GA_MEASUREMENT_ID is unset — no
- * script tag, no dataLayer, no network request. That keeps dev and preview
- * builds out of the property without needing a separate GA config.
+ * Both halves render nothing at all when NEXT_PUBLIC_GA_MEASUREMENT_ID is
+ * unset — no script tag, no dataLayer, no network request. That keeps dev and
+ * preview builds out of the property without needing a separate GA config.
  *
- * Order matters: Google requires the `consent default` command to be in the
- * dataLayer *before* gtag.js executes. If it lands afterwards the first hit is
- * sent with full storage granted, which is the exact cookie-before-consent
- * problem the banner exists to avoid.
+ * The split is not cosmetic: only the consent defaults may live in <head>.
+ * See the note on GoogleAnalytics below.
+ */
+
+/**
+ * <head> half. Seeds the dataLayer with consent defaults.
  *
- * That first block is a plain <script>, not next/script. `beforeInteractive`
- * is only honoured in the true root layout, and this app's root layout is a
+ * Google requires the `consent default` command to be in the dataLayer
+ * *before* gtag.js executes. If it lands afterwards the first hit is sent with
+ * full storage granted, which is the exact cookie-before-consent problem the
+ * banner exists to avoid.
+ *
+ * This is a plain <script>, not next/script. `beforeInteractive` is only
+ * honoured in the true root layout, and this app's root layout is a
  * passthrough — the <html> tree lives in [locale]/layout.tsx. A raw inline
  * script in <head> is unconditionally synchronous, so the ordering holds
  * without depending on where next/script decides to hoist it.
+ *
+ * Nothing in here suspends, which is what makes it safe in <head>.
  */
-export function GoogleAnalytics() {
+export function GoogleAnalyticsConsent() {
   if (!isAnalyticsEnabled) return null
 
   const consentDefault = `
@@ -43,17 +52,41 @@ gtag('js', new Date());
 `.trim()
 
   return (
-    <>
-      {/*
-        Reads the stored decision synchronously, so a returning visitor who
-        already accepted is not downgraded to denied for the first hit of every
-        session.
-      */}
-      <script
-        id="ga-consent-default"
-        dangerouslySetInnerHTML={{ __html: consentDefault }}
-      />
+    <script
+      id="ga-consent-default"
+      // Reads the stored decision synchronously, so a returning visitor who
+      // already accepted is not downgraded to denied for the first hit of
+      // every session.
+      dangerouslySetInnerHTML={{ __html: consentDefault }}
+    />
+  )
+}
 
+/**
+ * <body> half. Loads gtag.js and mounts the page_view tracker.
+ *
+ * MUST NOT be moved into <head>. PageViewTracker calls useSearchParams(),
+ * which suspends during SSR, and it carries its own Suspense boundary to
+ * contain that. <head> is part of Fizz's preamble — React writes it exactly
+ * once at the top of the stream, before any suspended subtree is able to
+ * resume — so a boundary that actually suspends up there desyncs the renderer
+ * and takes the whole response down with:
+ *
+ *   Expected a suspended thenable. This is a bug in React.
+ *   -> failed to pipe response
+ *
+ * It only reproduces once NEXT_PUBLIC_GA_MEASUREMENT_ID is set, because an
+ * unset ID short-circuits both components to null. .env.example leaves it
+ * blank, so nothing surfaced until the value was passed as a build arg.
+ *
+ * Both tags are `afterInteractive`, so next/script hoists them wherever they
+ * sit in the tree — living in <body> costs nothing.
+ */
+export function GoogleAnalytics() {
+  if (!isAnalyticsEnabled) return null
+
+  return (
+    <>
       <Script
         id="ga-script"
         strategy="afterInteractive"

@@ -1,11 +1,13 @@
 import Link from 'next/link'
-import { useLocale } from 'next-intl'
+import { getLocale } from 'next-intl/server'
 import { ArrowRight } from 'lucide-react'
 import { fetchFeaturedCategories } from '@/lib/api'
 import { SafeImage } from '@/components/ui/safe-image'
 
+// getLocale(), not useLocale() — a next-intl hook inside an `async` server
+// component breaks the RSC render. See the note in featured-products.tsx.
 export async function CategoryTiles() {
-  const locale = useLocale()
+  const locale = await getLocale()
   const categories = await fetchFeaturedCategories()
 
   return (

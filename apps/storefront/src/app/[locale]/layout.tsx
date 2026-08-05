@@ -13,7 +13,7 @@ import { CompareBar } from '@/components/layout/compare-bar'
 import { CartBootstrap } from '@/components/cart-bootstrap'
 import { RouteProgress } from '@/components/layout/route-progress'
 import { OrganizationJsonLd } from '@/components/seo/json-ld'
-import { GoogleAnalytics } from '@/components/analytics/google-analytics'
+import { GoogleAnalytics, GoogleAnalyticsConsent } from '@/components/analytics/google-analytics'
 import { ConsentBanner } from '@/components/analytics/consent-banner'
 import {
   SITE_URL,
@@ -148,10 +148,17 @@ export default async function LocaleLayout({ children, params }: Props) {
           href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
           rel="stylesheet"
         />
-        {/* Consent Mode defaults must be in the dataLayer before gtag.js runs. */}
-        <GoogleAnalytics />
+        {/*
+          Consent Mode defaults must be in the dataLayer before gtag.js runs,
+          so this one inline script stays in <head>. gtag.js itself and the
+          page_view tracker live in <body> — the tracker suspends on
+          useSearchParams(), and suspending inside the <head> preamble breaks
+          the SSR stream outright.
+        */}
+        <GoogleAnalyticsConsent />
       </head>
       <body>
+        <GoogleAnalytics />
         <OrganizationJsonLd locale={locale} />
         <NextIntlClientProvider messages={messages}>
           <Providers>

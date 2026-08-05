@@ -17,7 +17,16 @@ export function AnnouncementBar() {
         {items.map((item, i) => (
           <span key={i} className="flex items-center gap-1.5">
             <item.icon className="w-3.5 h-3.5 text-gold flex-shrink-0" />
-            <span dangerouslySetInnerHTML={{ __html: t(item.key as never) }} />
+            {/*
+              t.rich, not t(). next-intl parses <b> in a message as a rich-text
+              tag and throws FORMATTING_ERROR unless a handler for it is passed
+              — plain t() cannot render one. Messages without any tag pass
+              through t.rich unchanged, so all three keys use the same call.
+
+              This also drops a dangerouslySetInnerHTML that was injecting
+              translation strings straight into the DOM.
+            */}
+            <span>{t.rich(item.key as never, { b: (chunks) => <b>{chunks}</b> })}</span>
           </span>
         ))}
       </div>

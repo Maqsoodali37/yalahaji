@@ -190,7 +190,13 @@ services:
     networks:
       - yalahaji-net
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:${STOREFRONT_PORT:-3000}/ || exit 1"]
+      # Probes /api/health, not /. Two reasons, both learned the hard way:
+      # `--spider` drops the connection once headers arrive, and aborting a
+      # streamed HTML response mid-write trips a Node web-streams race
+      # (nodejs/node#62036) that logged
+      #   TypeError: controller[kState].transformAlgorithm is not a function
+      # every 30s. And -qO- consumes the body, so nothing is left half-written.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${STOREFRONT_PORT:-3000}/api/health > /dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       start_period: 20s
@@ -220,7 +226,8 @@ services:
     networks:
       - yalahaji-net
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:${ADMIN_PORT:-3001}/ || exit 1"]
+      # /api/health, not / — see the storefront healthcheck above.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${ADMIN_PORT:-3001}/api/health > /dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       start_period: 20s
