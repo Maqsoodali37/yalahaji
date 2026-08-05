@@ -3,6 +3,8 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger'
 import { ReviewsService } from './reviews.service'
 import { CreateReviewDto } from './dto/create-review.dto'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
+import { RolesGuard } from '../auth/roles.guard'
+import { Roles, STAFF_MANAGE } from '../auth/roles.decorator'
 import { CurrentUser } from '../auth/current-user.decorator'
 
 @ApiTags('reviews')
@@ -28,14 +30,14 @@ export class ReviewsController {
   }
 
   @Patch(':id/approve')
-  @UseGuards(JwtAuthGuard) @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiBearerAuth()
   @ApiOperation({ summary: 'Admin: approve review' })
   approve(@Param('id') id: string) {
     return this.reviewsService.approve(id)
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard) @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiBearerAuth()
   @ApiOperation({ summary: 'Admin: delete review' })
   remove(@Param('id') id: string) {
     return this.reviewsService.remove(id)

@@ -77,6 +77,75 @@ export class ProductsService {
     }
   }
 
+  /** Admin listing — includes inactive products, supports status filter. */
+  async findAllAdmin(opts: {
+    search?: string
+    category?: string
+    status?: 'active' | 'inactive' | 'all'
+    page?: number
+    limit?: number
+  }) {
+    const { search, category, status = 'all', page = 1, limit = 20 } = opts
+
+    const where: Prisma.ProductWhereInput = {
+      ...(status === 'active' && { isActive: true }),
+      ...(status === 'inactive' && { isActive: false }),
+      ...(category && { categoryId: category }),
+      ...(search && {
+        OR: [
+          { nameEn: { contains: search } },
+          { sku: { contains: search } },
+          { slug: { contains: search } },
+        ],
+      }),
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.product.findMany({
+        where,
+        select: PRODUCT_SELECT,
+        orderBy: { updatedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.product.count({ where }),
+    ])
+
+    return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } }
+  }
+
+  /** Variants below their low-stock threshold, for the inventory dashboard. */
+  async findLowStock(limit = 20) {
+    const variants = await this.prisma.productVariant.findMany({
+      where: { isActive: true },
+      include: { product: { select: { id: true, slug: true, nameEn: true } } },
+      orderBy: { stock: 'asc' },
+      take: 200,
+    })
+    return variants
+      .filter((v) => v.stock <= v.lowStockThreshold)
+      .slice(0, limit)
+  }
+
+  /** Aggregate counts for the dashboard overview. */
+  async adminStats() {
+    const [productCount, activeCount, variants] = await Promise.all([
+      this.prisma.product.count(),
+      this.prisma.product.count({ where: { isActive: true } }),
+      this.prisma.productVariant.findMany({
+        where: { isActive: true },
+        select: { stock: true, lowStockThreshold: true },
+      }),
+    ])
+    return {
+      productCount,
+      activeCount,
+      inactiveCount: productCount - activeCount,
+      lowStockCount: variants.filter((v) => v.stock <= v.lowStockThreshold).length,
+      outOfStockCount: variants.filter((v) => v.stock === 0).length,
+    }
+  }
+
   async findBySlug(slug: string) {
     const product = await this.prisma.product.findUnique({
       where: { slug, isActive: true },
@@ -126,11 +195,77 @@ export class ProductsService {
 
   async update(id: string, dto: UpdateProductDto) {
     await this.findById(id)
-    const { badges, tags, ...data } = dto
-    return this.prisma.product.update({
-      where: { id },
-      data,
-      select: PRODUCT_SELECT,
+    const { badges, tags, variants, images, sizeGuide, ...data } = dto
+
+    return this.prisma.$transaction(async (tx) => {
+      // Scalar fields first.
+      await tx.product.update({ where: { id }, data })
+
+      // Badges and tags are replace-all collections.
+      if (badges) {
+        await tx.productBadge.deleteMany({ where: { productId: id } })
+        if (badges.length > 0) {
+          await tx.productBadge.createMany({
+            data: badges.map((badge) => ({ productId: id, badge })),
+          })
+        }
+      }
+
+      if (tags) {
+        await tx.productTag.deleteMany({ where: { productId: id } })
+        if (tags.length > 0) {
+          await tx.productTag.createMany({
+            data: tags.map((tag) => ({ productId: id, tag })),
+          })
+        }
+      }
+
+      // Variants are matched on SKU: update existing, create new, prune removed.
+      if (variants) {
+        const existing = await tx.productVariant.findMany({ where: { productId: id } })
+        const incomingSkus = new Set(variants.map((v) => v.sku))
+
+        const removed = existing.filter((v) => !incomingSkus.has(v.sku))
+        if (removed.length > 0) {
+          // Deactivate rather than delete — order history references these rows.
+          await tx.productVariant.updateMany({
+            where: { id: { in: removed.map((v) => v.id) } },
+            data: { isActive: false },
+          })
+        }
+
+        for (const variant of variants) {
+          const match = existing.find((v) => v.sku === variant.sku)
+          if (match) {
+            await tx.productVariant.update({
+              where: { id: match.id },
+              data: { ...variant, isActive: true },
+            })
+          } else {
+            await tx.productVariant.create({ data: { ...variant, productId: id } })
+          }
+        }
+      }
+
+      if (images) {
+        await tx.productMedia.deleteMany({ where: { productId: id } })
+        if (images.length > 0) {
+          await tx.productMedia.createMany({
+            data: images.map((img) => ({ ...img, productId: id })),
+          })
+        }
+      }
+
+      if (sizeGuide) {
+        await tx.sizeGuideEntry.deleteMany({ where: { productId: id } })
+        if (sizeGuide.length > 0) {
+          await tx.sizeGuideEntry.createMany({
+            data: sizeGuide.map((entry) => ({ ...entry, productId: id })),
+          })
+        }
+      }
+
+      return tx.product.findUnique({ where: { id }, select: PRODUCT_SELECT })
     })
   }
 

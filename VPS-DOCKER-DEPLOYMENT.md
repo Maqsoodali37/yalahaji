@@ -34,7 +34,7 @@ Internet
     ▼
 Nginx (port 80 / 443)
     ├── yalahaji.com        → storefront:3000
-    ├── admin.yalahaji.com  → admin:3001
+    ├── yh-admin.yalahaji.com  → admin:3001
     └── api.yalahaji.com    → api:4000
 
 Internal Docker network (yalahaji-net)
@@ -659,23 +659,23 @@ server {
 ```nginx
 server {
     listen 80;
-    server_name admin.yalahaji.com;
+    server_name yh-admin.yalahaji.com;
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
 
     location / {
-        return 301 https://admin.yalahaji.com$request_uri;
+        return 301 https://yh-admin.yalahaji.com$request_uri;
     }
 }
 
 server {
     listen 443 ssl http2;
-    server_name admin.yalahaji.com;
+    server_name yh-admin.yalahaji.com;
 
-    ssl_certificate     /etc/letsencrypt/live/admin.yalahaji.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/admin.yalahaji.com/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/yh-admin.yalahaji.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yh-admin.yalahaji.com/privkey.pem;
     include             /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
 
@@ -774,7 +774,7 @@ Create `nginx/conf.d/init.conf`:
 ```nginx
 server {
     listen 80;
-    server_name yalahaji.com www.yalahaji.com admin.yalahaji.com api.yalahaji.com;
+    server_name yalahaji.com www.yalahaji.com yh-admin.yalahaji.com api.yalahaji.com;
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -809,7 +809,7 @@ docker compose run --rm certbot certonly \
   --webroot -w /var/www/certbot \
   --email your@email.com \
   --agree-tos --no-eff-email \
-  -d admin.yalahaji.com
+  -d yh-admin.yalahaji.com
 
 # API
 docker compose run --rm certbot certonly \

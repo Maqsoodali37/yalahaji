@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+@layer base {
+  :root {
+    --background: #ffffff;
+    --foreground: #0e2a1e;
+    --card: #ffffff;
+    --card-foreground: #0e2a1e;
+    --popover: #ffffff;
+    --popover-foreground: #0e2a1e;
+    --radius: 8px;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-paper text-foreground font-sans;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  .serif {
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-weight: 400;
+  }
+
+  /* ─── Surfaces ─────────────────────────────────────────── */
+  .panel {
+    @apply bg-white border border-line rounded-lg shadow-sm;
+  }
+
+  .panel-pad {
+    @apply p-5;
+  }
+
+  /* ─── Form controls ────────────────────────────────────── */
+  .field {
+    @apply w-full h-10 px-3 rounded-md border border-line bg-white text-ink
+           placeholder:text-ink-3 outline-none transition
+           focus:border-green focus:ring-2 focus:ring-green/15
+           disabled:bg-paper disabled:text-ink-3 disabled:cursor-not-allowed;
+  }
+
+  .field-textarea {
+    @apply w-full px-3 py-2 rounded-md border border-line bg-white text-ink
+           placeholder:text-ink-3 outline-none transition resize-y
+           focus:border-green focus:ring-2 focus:ring-green/15;
+  }
+
+  .label {
+    @apply block text-xs font-semibold text-ink-2 mb-1.5;
+  }
+
+  .hint {
+    @apply text-xs text-ink-3 mt-1;
+  }
+
+  .error-text {
+    @apply text-xs text-alert mt-1;
+  }
+
+  /* ─── Tables ───────────────────────────────────────────── */
+  .table-wrap {
+    @apply w-full overflow-x-auto;
+  }
+
+  .table {
+    @apply w-full text-sm border-collapse;
+  }
+
+  .table thead th {
+    @apply text-left text-xs font-semibold uppercase tracking-wide text-ink-3
+           px-4 py-3 border-b border-line bg-paper whitespace-nowrap;
+  }
+
+  .table tbody td {
+    @apply px-4 py-3 border-b border-line/70 align-middle;
+  }
+
+  .table tbody tr:hover {
+    @apply bg-green-tint/40;
+  }
+
+  /* ─── Badges ───────────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full
+           text-[11px] font-semibold whitespace-nowrap;
+  }
+}

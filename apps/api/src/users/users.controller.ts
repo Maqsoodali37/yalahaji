@@ -4,11 +4,13 @@ import { UsersService } from './users.service'
 import { UpdateProfileDto } from './dto/update-profile.dto'
 import { CreateAddressDto } from './dto/create-address.dto'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
+import { RolesGuard } from '../auth/roles.guard'
+import { Roles, STAFF_ORDERS } from '../auth/roles.decorator'
 import { CurrentUser } from '../auth/current-user.decorator'
 
 @ApiTags('users')
 @Controller('users')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -64,12 +66,14 @@ export class UsersController {
 
   // Admin
   @Get()
+  @Roles(...STAFF_ORDERS)
   @ApiOperation({ summary: 'Admin: list all users' })
   findAll(@Query('page') page = '1', @Query('limit') limit = '20') {
     return this.usersService.findAll(+page, +limit)
   }
 
   @Patch(':id/toggle-active')
+  @Roles('admin', 'manager')
   @ApiOperation({ summary: 'Admin: toggle user active status' })
   toggleActive(@Param('id') id: string) {
     return this.usersService.toggleActive(id)

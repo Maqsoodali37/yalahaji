@@ -12,6 +12,7 @@ const ORDER_INCLUDE = {
     },
   },
   address: true,
+  user: { select: { id: true, name: true, phone: true, email: true } },
   coupon: { select: { code: true, type: true, value: true } },
   timeline: { orderBy: { createdAt: 'desc' as const } },
   returns: true,
@@ -140,8 +141,27 @@ export class OrdersService {
     return order
   }
 
-  async findAll(userId?: string, page = 1, limit = 20) {
-    const where = userId ? { userId } : {}
+  async findAll(
+    userId?: string,
+    page = 1,
+    limit = 20,
+    filters: { status?: OrderStatus; search?: string } = {},
+  ) {
+    const where: Prisma.OrderWhereInput = {
+      ...(userId ? { userId } : {}),
+      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.search
+        ? {
+            OR: [
+              { number: { contains: filters.search } },
+              { guestPhone: { contains: filters.search } },
+              { guestEmail: { contains: filters.search } },
+              { user: { name: { contains: filters.search } } },
+              { user: { phone: { contains: filters.search } } },
+            ],
+          }
+        : {}),
+    }
     const [items, total] = await Promise.all([
       this.prisma.order.findMany({
         where, include: ORDER_INCLUDE,
@@ -151,6 +171,45 @@ export class OrdersService {
       this.prisma.order.count({ where }),
     ])
     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } }
+  }
+
+  /** Admin: fetch a single order by id, no ownership constraint. */
+  async findByIdAdmin(id: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      include: ORDER_INCLUDE,
+    })
+    if (!order) throw new NotFoundException('Order not found.')
+    return order
+  }
+
+  /** Dashboard KPIs: revenue, order counts, AOV, status breakdown. */
+  async adminStats(days = 30) {
+    const since = new Date()
+    since.setDate(since.getDate() - days)
+
+    const [all, recent, byStatus] = await Promise.all([
+      this.prisma.order.aggregate({ _count: { id: true }, _sum: { total: true } }),
+      this.prisma.order.aggregate({
+        where: { createdAt: { gte: since }, status: { not: OrderStatus.cancelled } },
+        _count: { id: true },
+        _sum: { total: true },
+      }),
+      this.prisma.order.groupBy({ by: ['status'], _count: { id: true } }),
+    ])
+
+    const recentCount = recent._count.id ?? 0
+    const recentRevenue = recent._sum.total ?? 0
+
+    return {
+      periodDays: days,
+      totalOrders: all._count.id ?? 0,
+      totalRevenue: all._sum.total ?? 0,
+      recentOrders: recentCount,
+      recentRevenue,
+      averageOrderValue: recentCount > 0 ? Math.round(recentRevenue / recentCount) : 0,
+      byStatus: byStatus.map((s) => ({ status: s.status, count: s._count.id })),
+    }
   }
 
   async findByNumber(number: string, userId?: string) {

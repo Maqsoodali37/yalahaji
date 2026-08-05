@@ -3,6 +3,8 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger'
 import { CategoriesService } from './categories.service'
 import { CreateCategoryDto } from './dto/create-category.dto'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
+import { RolesGuard } from '../auth/roles.guard'
+import { Roles, STAFF_MANAGE } from '../auth/roles.decorator'
 
 @ApiTags('categories')
 @Controller('categories')
@@ -18,14 +20,14 @@ export class CategoriesController {
   findOne(@Param('slug') slug: string) { return this.categoriesService.findBySlug(slug) }
 
   @Post()
-  @UseGuards(JwtAuthGuard) @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiBearerAuth()
   create(@Body() dto: CreateCategoryDto) { return this.categoriesService.create(dto) }
 
   @Patch(':id')
-  @UseGuards(JwtAuthGuard) @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiBearerAuth()
   update(@Param('id') id: string, @Body() dto: Partial<CreateCategoryDto>) { return this.categoriesService.update(id, dto) }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard) @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiBearerAuth()
   remove(@Param('id') id: string) { return this.categoriesService.remove(id) }
 }

@@ -1,9 +1,12 @@
 import { Controller, Get, Post, Patch, Param, Body, Query, Request, UseGuards } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger'
+import { OrderStatus } from '@prisma/client'
 import { OrdersService } from './orders.service'
 import { CreateOrderDto } from './dto/create-order.dto'
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
+import { RolesGuard } from '../auth/roles.guard'
+import { Roles, STAFF_ORDERS } from '../auth/roles.decorator'
 import { CurrentUser } from '../auth/current-user.decorator'
 
 @ApiTags('orders')
@@ -31,11 +34,35 @@ export class OrdersController {
   }
 
   @Get('admin')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...STAFF_ORDERS)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Admin: all orders' })
-  findAll(@Query('page') page = '1', @Query('limit') limit = '20') {
-    return this.ordersService.findAll(undefined, +page, +limit)
+  findAll(
+    @Query('page') page = '1',
+    @Query('limit') limit = '20',
+    @Query('status') status?: OrderStatus,
+    @Query('search') search?: string,
+  ) {
+    return this.ordersService.findAll(undefined, +page, +limit, { status, search })
+  }
+
+  @Get('admin/stats')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...STAFF_ORDERS)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Admin: revenue and order KPIs' })
+  adminStats(@Query('days') days = '30') {
+    return this.ordersService.adminStats(+days)
+  }
+
+  @Get('admin/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...STAFF_ORDERS)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Admin: get order by id' })
+  findOneAdmin(@Param('id') id: string) {
+    return this.ordersService.findByIdAdmin(id)
   }
 
   @Get('track/:number')
@@ -53,7 +80,8 @@ export class OrdersController {
   }
 
   @Patch(':id/status')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...STAFF_ORDERS)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Admin: update order status' })
   updateStatus(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto) {

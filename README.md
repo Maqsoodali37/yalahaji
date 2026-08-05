@@ -142,18 +142,63 @@ Key decisions: prices stored as `Int` in paisas (×100), multilingual fields (na
 
 ---
 
+## Admin Dashboard (`apps/admin/`)
+
+Next 15 + Tailwind + TanStack Query, on port **3001**. Shares the storefront's
+brand tokens. Full spec in sections 9–12 of `01-features-spec.md`.
+
+```bash
+cd apps/admin
+cp .env.example .env.local
+npm install
+npm run dev          # http://localhost:3001
+```
+
+### Access control
+
+Sign-in is restricted to staff roles (`admin`, `manager`, `support`,
+`fulfillment`); `customer` accounts are rejected at login. Navigation and
+pages are filtered by role, and the API enforces the same rules via
+`RolesGuard` — the UI checks are for UX only.
+
+| Area | Roles |
+|---|---|
+| Dashboard, Orders | admin, manager, support, fulfillment |
+| Products, Inventory, Coupons, Reviews, Blog, Analytics | admin, manager |
+| Deactivate a user | admin, manager |
+
+### Built
+
+| Section | Status | Notes |
+|---|---|---|
+| **Login** | Done | Token in `localStorage`, session restored via `GET /auth/me` |
+| **Dashboard** | Done | Revenue/orders/AOV KPIs, status breakdown, recent orders, low-stock list |
+| **Products** | Done | List with search + category/status filters, create/edit form (multilingual, SEO, tags), variant editor, archive |
+| **Orders** | Done | List with status filter + search, detail view with items/totals/timeline, guarded status transitions |
+| **Inventory** | Done | Low-stock queue with inline stock editing |
+| **Categories, Customers, Coupons, Reviews, Blog, Analytics** | Stubbed | Routes and nav in place; each page lists its plan and the endpoints already available |
+
+### Conventions
+
+- **Money is in paisas** (rupees × 100) on the wire. `formatPrice()` renders it;
+  the product form converts to/from rupees at the input boundary.
+- **`NEXT_PUBLIC_*` are build-time.** They're inlined into the client bundle, so
+  `docker-compose` passes them as build `args`, not just `environment`.
+- Status transitions follow `nextStatuses()` in `src/lib/utils.ts` — the
+  dropdown only offers legal next states.
+
+### Still to do
+
+- Image upload UI (`POST /media/upload` exists and is staff-guarded)
+- Bulk CSV import/export for products
+- Packing slips and refunds on orders
+- The six stubbed sections above
+
+---
+
 ## Next targets
 
-### 1. Admin Dashboard (`apps/admin/`)
-Full spec in sections 9–12 of `01-features-spec.md`. Priority order:
-- **Products** — CRUD, variant management, bulk CSV import/export
-- **Orders** — list, status updates, packing slips, refunds
-- **Inventory** — stock levels, low-stock alerts
-- **Customers** — profiles, order history, segmentation
-- **Coupons** — create/schedule/expire promotions
-- **Analytics** — sales dashboard, inventory reports, customer LTV
-
-### 2. Wire storefront to real API
+### 1. Wire storefront to real API
 Replace mock data in `apps/storefront/src/data/*.ts` with real API calls. Key areas:
 - `GET /api/v1/products` → shop page + homepage featured grid
 - `POST /api/v1/auth/login` + `/register` → replace Zustand mock
@@ -161,7 +206,7 @@ Replace mock data in `apps/storefront/src/data/*.ts` with real API calls. Key ar
 - `POST /api/v1/orders` → wire checkout flow
 - `GET /api/v1/categories` → populate mega-menu + sidebar filters
 
-### 3. Payment gateway integration
+### 2. Payment gateway integration
 JazzCash, Easypaisa, and COD are in the `PaymentMethod` enum. Need to implement the actual redirect/callback flow per provider and update `Order.paymentStatus` accordingly.
 
 ---

@@ -3,6 +3,8 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger'
 import { BlogService } from './blog.service'
 import { CreateBlogPostDto } from './dto/create-blog-post.dto'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
+import { RolesGuard } from '../auth/roles.guard'
+import { Roles, STAFF_MANAGE } from '../auth/roles.decorator'
 
 @ApiTags('blog')
 @Controller('blog')
@@ -16,7 +18,7 @@ export class BlogController {
   }
 
   @Get('admin')
-  @UseGuards(JwtAuthGuard) @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiBearerAuth()
   @ApiOperation({ summary: 'Admin: list all posts' })
   findAllAdmin(@Query('page') page = '1', @Query('limit') limit = '12') {
     return this.blogService.findAll(false, +page, +limit)
@@ -26,18 +28,18 @@ export class BlogController {
   findOne(@Param('slug') slug: string) { return this.blogService.findBySlug(slug) }
 
   @Post()
-  @UseGuards(JwtAuthGuard) @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiBearerAuth()
   create(@Body() dto: CreateBlogPostDto) {
     return this.blogService.create(dto)
   }
 
   @Patch(':id')
-  @UseGuards(JwtAuthGuard) @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiBearerAuth()
   update(@Param('id') id: string, @Body() dto: Partial<CreateBlogPostDto>) {
     return this.blogService.update(id, dto)
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard) @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard) @Roles(...STAFF_MANAGE) @ApiBearerAuth()
   remove(@Param('id') id: string) { return this.blogService.remove(id) }
 }
