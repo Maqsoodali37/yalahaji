@@ -77,17 +77,20 @@ export class OrdersController {
   }
 
   /**
-   * POST rather than GET so the customer's email/phone stays out of URLs,
-   * access logs and Referer headers. Rate-limited well below the global
-   * ceiling because this is the one order endpoint an anonymous caller can
-   * reach, and the contact check is only as good as the guess rate.
+   * POST rather than GET so the order number — which is now the credential —
+   * stays out of URLs, access logs, browser history and Referer headers.
+   *
+   * Rate-limited hard because this is the one order endpoint an anonymous
+   * caller can reach and the random token is all that protects it. Six
+   * Base32 characters is ~1.07e9 combinations, so 5/minute puts a blind
+   * search out of reach; the limit exists to keep it that way.
    */
-  @Post('track/:number')
+  @Post('track')
   @HttpCode(200)
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Track an order by number + the contact it was placed with' })
-  track(@Param('number') number: string, @Body() dto: TrackOrderDto) {
-    return this.ordersService.trackByNumber(number, dto.contact)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Track an order by its full order number' })
+  track(@Body() dto: TrackOrderDto) {
+    return this.ordersService.trackByNumber(dto.number)
   }
 
   @Get(':number')

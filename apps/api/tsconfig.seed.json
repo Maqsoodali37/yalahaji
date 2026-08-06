@@ -6,8 +6,11 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "outDir": "./dist-seed",
-    "rootDir": "./prisma",
+    "rootDir": ".",
     "resolveJsonModule": true
   },
-  "include": ["prisma/seed.ts"]
+  // seed.ts imports src/settings/config-catalogue, so rootDir must span both
+  // prisma/ and src/. Output is therefore dist-seed/prisma/seed.js — the
+  // entrypoint depends on that path.
+  "include": ["prisma/seed.ts", "src/settings/config-catalogue.ts"]
 }

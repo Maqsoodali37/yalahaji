@@ -1,5 +1,5 @@
 import { apiFetch, buildQuery } from './client'
-import { adaptOrder } from './adapters'
+import { adaptOrder, paisasToRupees } from './adapters'
 import type { Paginated, WireOrder } from './wire'
 import type { Order, PaymentMethod, ShippingMethod } from '@/types'
 
@@ -90,11 +90,16 @@ export interface TrackedOrder {
 /**
  * Track an order without signing in.
  *
- * Requires the email or phone the order was placed with — the order number
- * alone is not a credential, since numbers are sequential. POST rather than
- * GET keeps that contact detail out of URLs and server logs.
+ * The order number is the whole credential, which is only safe because it
+ * carries a random token (`YH-2026-1001-K7QX9M`). POST rather than GET keeps
+ * that number out of URLs, browser history and server logs — treat it like a
+ * password in transit, because that is what it now is.
+ *
+ * `anonymous` suppresses the bearer header: a signed-in customer tracking
+ * someone else's parcel — a gift they are chasing for a relative, say —
+ * should get the same answer as anyone else holding the number.
  */
-export async function trackOrder(number: string, contact: string): Promise<TrackedOrder> {
+export async function trackOrder(number: string): Promise<TrackedOrder> {
   const res = await apiFetch<{
     number: string
     status: Order['status']
@@ -104,9 +109,9 @@ export async function trackOrder(number: string, contact: string): Promise<Track
     createdAt: string
     items: Array<{ name: string; image: string | null; quantity: number }>
     timeline: Array<{ status: Order['status']; note: string | null; createdAt: string }>
-  }>(`/orders/track/${encodeURIComponent(number)}`, {
+  }>('/orders/track', {
     method: 'POST',
-    body: { contact },
+    body: { number: number.trim().toUpperCase() },
     anonymous: true,
   })
 
@@ -115,7 +120,7 @@ export async function trackOrder(number: string, contact: string): Promise<Track
     status: res.status,
     shippingMethod: res.shippingMethod,
     trackingNumber: res.trackingNumber ?? undefined,
-    total: Math.round(res.total) / 100,
+    total: paisasToRupees(res.total),
     createdAt: res.createdAt,
     items: res.items.map((i) => ({
       name: i.name,

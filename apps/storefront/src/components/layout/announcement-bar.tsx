@@ -26,7 +26,7 @@ export function AnnouncementBar() {
               This also drops a dangerouslySetInnerHTML that was injecting
               translation strings straight into the DOM.
             */}
-            <span>{t.rich(item.key as never, { b: (chunks) => <b>{chunks}</b> })}</span>
+            <span>{t.rich(item.key, { b: (chunks) => <b>{chunks}</b> })}</span>
           </span>
         ))}
       </div>

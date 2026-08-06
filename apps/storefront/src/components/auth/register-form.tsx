@@ -2,9 +2,10 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Eye, EyeOff, UserPlus, Loader2 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
+import { safeNextPath } from '@/lib/auth-redirect'
 import {
   validate,
   hasErrors,
@@ -35,6 +36,7 @@ const registerRules = {
 
 export function RegisterForm({ locale }: { locale: string }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { register, isLoading, error, clearError } = useAuthStore()
 
   const [showPassword, setShowPassword] = useState(false)
@@ -60,7 +62,9 @@ export function RegisterForm({ locale }: { locale: string }) {
     if (hasErrors(found)) return
 
     const ok = await register(name.trim(), phone, email.trim(), password)
-    if (ok) router.push(`/${locale}/account`)
+    // Someone who hit a login wall and chose "create account" instead should
+    // still land where they were going.
+    if (ok) router.push(safeNextPath(searchParams.get('next'), locale))
   }
 
   return (

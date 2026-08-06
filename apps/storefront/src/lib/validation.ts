@@ -104,6 +104,28 @@ export const email =
     return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed) ? undefined : message
   }
 
+/**
+ * `YH-<year>-<sequence>-<token>`, e.g. `YH-2026-1001-K7QX9M`.
+ *
+ * **Mirrors `ORDER_NUMBER_REGEX` in `apps/api/src/orders/dto/track-order.dto.ts`.
+ * Change one, change both** — a looser rule here produces a rejection the
+ * customer was never warned about; a stricter one blocks a number the API
+ * would have accepted.
+ *
+ * The token alphabet is Crockford Base32, so `I`, `L`, `O` and `U` are absent.
+ * Catching those here is the point of validating client-side at all: someone
+ * who reads `0` as `O` off a WhatsApp message gets told the format is wrong,
+ * rather than a bare "order not found" that suggests their order is missing.
+ */
+export const ORDER_NUMBER_REGEX = /^YH-\d{4}-\d{4,}-[0-9ABCDEFGHJKMNPQRSTVWXYZ]{6}$/
+
+export const orderNumber =
+  (
+    message = 'Enter the full order number from your confirmation, e.g. YH-2026-1001-K7QX9M.',
+  ): Rule<string | undefined> =>
+  (value) =>
+    ORDER_NUMBER_REGEX.test((value ?? '').trim().toUpperCase()) ? undefined : message
+
 /** Pakistan Post uses five digits. Optional everywhere it appears. */
 export const postalCode =
   (message = 'Postal code should be 5 digits, e.g. 54000.'): Rule<string | undefined> =>

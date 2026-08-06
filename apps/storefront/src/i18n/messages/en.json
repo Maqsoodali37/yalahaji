@@ -59,7 +59,10 @@
     "compare": "Compare",
     "cart": "Cart",
     "signIn": "Sign In",
-    "signOut": "Sign Out"
+    "signOut": "Sign Out",
+    "trackOrder": "Track Order",
+    "register": "Create Account",
+    "myAccount": "My Account"
   },
   "hero": {
     "seasonalBadge": "Hajj Season 2025",
@@ -239,7 +242,10 @@
     "phone": "Phone Number",
     "orContinueWith": "or continue with",
     "alreadyHaveAccount": "Already have an account?",
-    "noAccount": "Don't have an account?"
+    "noAccount": "Don't have an account?",
+    "profile": "Profile",
+    "signOut": "Sign Out",
+    "signedInAs": "Signed in as"
   },
   "blog": {
     "title": "Hajj & Umrah Guides",
@@ -340,5 +346,48 @@
     "accept": "Accept",
     "decline": "Decline",
     "dismiss": "Dismiss"
+  },
+  "track": {
+    "title": "Track Your Order",
+    "subtitle": "Enter the order number from your confirmation message.",
+    "label": "Order Number",
+    "placeholder": "YH-2026-1001-K7QX9M",
+    "hint": "Include the code after the last dash — it is part of the number.",
+    "submit": "Track Order",
+    "searching": "Looking up your order…",
+    "notFound": "We could not find an order with that number. Check it against your confirmation message and try again.",
+    "rateLimited": "Too many attempts. Please wait a minute and try again.",
+    "genericError": "Could not look up your order. Please try again.",
+    "placed": "Placed on {date}",
+    "items": "Items",
+    "itemQty": "Qty {count}",
+    "total": "Order Total",
+    "courierTracking": "Courier tracking number",
+    "progress": "Progress",
+    "another": "Track another order",
+    "signInPrompt": "Have an account? Sign in to see all your orders in one place.",
+    "signInLink": "Sign in"
+  },
+  "guest": {
+    "title": "Guest Checkout",
+    "message": "You checked out as a guest.",
+    "explain": "Guest orders are not attached to an account, so there is nothing to sign in to here. You can still follow your delivery with your order number.",
+    "trackCta": "Track Your Order",
+    "signInCta": "Sign In",
+    "registerCta": "Create Account",
+    "benefitsTitle": "Why create an account?",
+    "benefitOrders": "Every order in one place, without hunting for the number",
+    "benefitWishlist": "A wishlist that follows you to any device",
+    "benefitAddresses": "Saved addresses, so checkout takes a moment",
+    "benefitReturns": "Raise a return and follow where it has got to",
+    "signInRequired": "Please sign in",
+    "signInToSee": "Sign in to see your {what}.",
+    "checking": "Checking your session…",
+    "orders": "orders",
+    "wishlist": "wishlist",
+    "addresses": "saved addresses",
+    "profile": "profile",
+    "returns": "returns",
+    "account": "account"
   }
 }

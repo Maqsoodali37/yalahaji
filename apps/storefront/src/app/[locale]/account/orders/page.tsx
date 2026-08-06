@@ -1,25 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { useLocale } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { useQuery } from '@tanstack/react-query'
 import { Package, ChevronRight } from 'lucide-react'
 import { fetchMyOrders } from '@/lib/api'
 import { formatPrice } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import { AccountQueryError } from '@/components/account/query-error'
 import type { OrderStatus } from '@/types'
-
-const STATUS_LABEL: Record<OrderStatus, string> = {
-  pending: 'Pending',
-  confirmed: 'Confirmed',
-  processing: 'Processing',
-  packed: 'Packed',
-  shipped: 'Shipped',
-  out_for_delivery: 'Out for Delivery',
-  delivered: 'Delivered',
-  cancelled: 'Cancelled',
-  refunded: 'Refunded',
-}
 
 const STATUS_CLASS: Record<OrderStatus, string> = {
   pending: 'bg-yellow-100 text-yellow-800',
@@ -35,11 +24,13 @@ const STATUS_CLASS: Record<OrderStatus, string> = {
 
 export default function OrdersPage() {
   const locale = useLocale()
+  const t = useTranslations('account')
+  const tStatus = useTranslations('account.orderStatus')
 
   // Client-side rather than server-rendered: the customer token lives in
   // localStorage, which a server component cannot read. Account pages have no
   // SEO value, so nothing is lost.
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['my-orders'],
     queryFn: () => fetchMyOrders(),
   })
@@ -48,7 +39,7 @@ export default function OrdersPage() {
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <h2 className="font-bold text-ink text-xl">My Orders</h2>
+        <h2 className="font-bold text-ink text-xl">{t('orders')}</h2>
         {[0, 1, 2].map((i) => (
           <div key={i} className="bg-white border border-line rounded-md p-5 animate-pulse">
             <div className="h-4 w-32 bg-line rounded-sm mb-3" />
@@ -62,19 +53,20 @@ export default function OrdersPage() {
   if (isError) {
     return (
       <div className="space-y-4">
-        <h2 className="font-bold text-ink text-xl">My Orders</h2>
-        <div className="bg-white border border-line rounded-md p-12 text-center">
-          <Package className="w-12 h-12 text-stone mx-auto mb-4" />
-          <p className="font-semibold text-ink mb-1">Could not load your orders</p>
-          <p className="text-sm text-stone">Please refresh the page to try again.</p>
-        </div>
+        <h2 className="font-bold text-ink text-xl">{t('orders')}</h2>
+        <AccountQueryError
+          error={error}
+          onRetry={() => refetch()}
+          title="Could not load your orders"
+          what="orders"
+        />
       </div>
     )
   }
 
   return (
     <div className="space-y-4">
-      <h2 className="font-bold text-ink text-xl">My Orders</h2>
+      <h2 className="font-bold text-ink text-xl">{t('orders')}</h2>
       {orders.length === 0 ? (
         <div className="bg-white border border-line rounded-md p-12 text-center">
           <Package className="w-12 h-12 text-stone mx-auto mb-4" />
@@ -95,7 +87,7 @@ export default function OrdersPage() {
               <div>
                 <p className="font-bold text-ink">{order.number}</p>
                 <p className="text-xs text-stone mt-0.5">
-                  {new Date(order.createdAt).toLocaleDateString('en-PK', {
+                  {new Date(order.createdAt).toLocaleDateString(locale, {
                     day: 'numeric',
                     month: 'long',
                     year: 'numeric',
@@ -109,7 +101,7 @@ export default function OrdersPage() {
                     STATUS_CLASS[order.status]
                   )}
                 >
-                  {STATUS_LABEL[order.status]}
+                  {tStatus(order.status)}
                 </span>
                 <ChevronRight className="w-4 h-4 text-stone" />
               </div>

@@ -9,9 +9,53 @@ import {
   email,
   postalCode,
   inRange,
+  orderNumber,
   addressRules,
   type AddressFormValues,
 } from './validation'
+
+/**
+ * Mirrors `ORDER_NUMBER_REGEX` in the API's `track-order.dto.ts`. If this
+ * block and that DTO ever disagree, a customer is either told their own order
+ * number is malformed, or sent on a round trip that was always going to be
+ * rejected.
+ */
+describe('orderNumber', () => {
+  const rule = orderNumber()
+
+  it('accepts a full number, lower case, with surrounding space', () => {
+    expect(rule('YH-2026-1001-K7QX9M', {})).toBeUndefined()
+    expect(rule('  yh-2026-1001-k7qx9m  ', {})).toBeUndefined()
+  })
+
+  it('rejects a bare sequential number with no token', () => {
+    // The token is what makes the number unguessable, and tracking accepts
+    // the number alone — so a format without one must never be sent.
+    expect(rule('YH-2026-1001', {})).toBeDefined()
+  })
+
+  it('rejects the Base32 letters that are not in the alphabet', () => {
+    // I, L, O and U are excluded, so their presence means a misread 1 or 0.
+    // Catching it here explains the problem; the API would only say "not found".
+    expect(rule('YH-2026-1001-K7QXIM', {})).toBeDefined()
+    expect(rule('YH-2026-1001-K7QXOM', {})).toBeDefined()
+    expect(rule('YH-2026-1001-K7QXLU', {})).toBeDefined()
+  })
+
+  it('rejects a token of the wrong length', () => {
+    expect(rule('YH-2026-1001-K7QX9', {})).toBeDefined()
+    expect(rule('YH-2026-1001-K7QX9MM', {})).toBeDefined()
+  })
+
+  it('accepts a five-digit sequence, for the year order 10000 is placed', () => {
+    expect(rule('YH-2026-10000-K7QX9M', {})).toBeUndefined()
+  })
+
+  it('rejects empty input', () => {
+    expect(rule('', {})).toBeDefined()
+    expect(rule(undefined, {})).toBeDefined()
+  })
+})
 
 describe('rules', () => {
   describe('required', () => {

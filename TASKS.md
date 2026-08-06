@@ -14,32 +14,16 @@ The single source of truth for pending work on this project.
 
 ## High
 
-### Guest user experience — Phase 1: audit (report only, no code)
+### Deploy the order-number migration carefully
 
-Review the storefront and backend across: auth flow, guest checkout, guest account/dashboard, orders, wishlist, saved addresses, profile, returns, route guards/middleware, navigation menu, API authorization, order tracking, session handling.
+`20260806140000_unguessable_order_numbers` rewrites **every existing order number**, appending a random six-character token. It is required, not optional — public tracking now accepts the number alone, so an un-migrated row is a publicly readable order.
 
-Deliver a written report with these sections before writing any code: **Current Implementation**, **Issues Found**, **Conflicts**, **Security Concerns**, **UX Improvements**.
+Before running it in production:
 
-Look for: guests reaching pages they should not, account menus that do not work for guests, unauthenticated APIs, missing route guards, duplicate or conflicting logic, guest and authenticated flows overlapping, UI shown to guests that needs login.
+- Take a backup. The migration is re-runnable (its `WHERE` skips already-tokenised rows) but not reversible — the old numbers are not recorded anywhere.
+- Every order number a customer already holds, in a WhatsApp confirmation or a screenshot, **stops working for tracking**. Decide whether support needs a lookup by old number, or whether an announcement goes out.
+- Admin order search matches on the stored number, so staff searching `YH-2026-1042` still find it by prefix. Worth confirming against the real screen.
 
-Known starting points:
-- `POST /orders/track/:number` is already public and matches on `guestEmail`/`guestPhone` — probably most of the tracking requirement already exists.
-- Guest orders already require a phone or email, so every guest order is trackable.
-- `guest_checkout_enabled` is enforced server-side; check the UI honours it.
-- `account/returns`, `addresses`, `profile`, `wishlist` were rewritten recently and all assume a signed-in user — most likely place for guard gaps.
-
-### Guest user experience — Phase 2: implementation
-
-**Blocked on Phase 1.**
-
-- Guests may: browse, search, view PDP, cart add/update, coupons, shipping estimate, guest checkout, place order, track order by *number + email* or *number + phone*.
-- Login required for: My Orders, Wishlist, Saved Addresses, Profile, Returns (plus saved payment methods / notifications / invoice downloads if they appear).
-- Guest dashboard replaces the account dashboard — title "Guest Checkout", message "You checked out as a guest.", actions Track Your Order / Sign In / Create Account, plus account benefits.
-- Navigation hides authenticated-only items from guests; shows Track Order / Sign In / Create Account.
-- Protect `/account`, `/orders`, `/wishlist`, `/addresses`, `/profile`, `/returns` with a friendly login redirect.
-- Backend: JWT enforced where required, guests cannot read another user's resources, orders only to authenticated users, guest tracking stays a separate public endpoint.
-
-Finish with a summary: files modified, issues found, issues fixed, security improvements, UX improvements, remaining recommendations, breaking changes.
 
 ### Verify the storefront production build on real hardware
 
@@ -88,10 +72,6 @@ Bank transfer is deliberately excluded and not planned.
 ### Analytics dashboard
 
 Revenue and order trends over a date range, best/worst sellers, customer lifetime value and repeat rate, coupon performance, CSV export. Needs aggregation endpoints designed beyond the current `/orders/admin/stats` and `/products/admin/stats`.
-
-### Remove remaining `as never` translation casts
-
-`components/layout/header.tsx` and `components/layout/announcement-bar.tsx` cast translation keys to `never`, which defeats type checking. Those keys currently resolve, but the same pattern in `cart-drawer.tsx` hid a genuinely missing `cart.freeShipping` key and shipped the literal string to customers.
 
 ### Testimonials API
 

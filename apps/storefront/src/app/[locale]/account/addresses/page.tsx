@@ -12,6 +12,7 @@ import {
   type AddressInput,
 } from '@/lib/api'
 import { AddressForm } from '@/components/account/address-form'
+import { AccountQueryError } from '@/components/account/query-error'
 import type { Address } from '@/types'
 
 export default function AddressesPage() {
@@ -82,18 +83,12 @@ export default function AddressesPage() {
       )}
 
       {isError && (
-        <div className="bg-white border border-alert/30 rounded-md p-6 text-center">
-          <AlertCircle className="w-8 h-8 text-alert mx-auto mb-3" />
-          <p className="font-semibold text-ink mb-1">Could not load your addresses</p>
-          <p className="text-sm text-stone mb-4">
-            {error instanceof ApiError
-              ? error.message
-              : 'Something went wrong on our side.'}
-          </p>
-          <button onClick={() => refetch()} className="btn-outline text-sm py-2 px-4">
-            Try again
-          </button>
-        </div>
+        <AccountQueryError
+          error={error}
+          onRetry={() => refetch()}
+          title="Could not load your addresses"
+          what="addresses"
+        />
       )}
 
       {actionError && (

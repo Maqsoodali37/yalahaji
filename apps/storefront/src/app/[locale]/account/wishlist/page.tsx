@@ -1,7 +1,8 @@
 'use client'
 
+import { useEffect } from 'react'
 import Link from 'next/link'
-import { useLocale } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Heart, AlertCircle } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useWishlistStore } from '@/store/wishlist'
@@ -11,8 +12,21 @@ import type { Product } from '@/types'
 
 export default function WishlistPage() {
   const locale = useLocale()
+  const t = useTranslations('account')
+
   const ids = useWishlistStore((s) => s.ids)
+  const isSynced = useWishlistStore((s) => s.isSynced)
+  const isSyncing = useWishlistStore((s) => s.isLoading)
+  const sync = useWishlistStore((s) => s.sync)
+
   const wishlistIds = Array.from(ids)
+
+  // The list is the account's, not the device's. `RequireAuth` in the layout
+  // guarantees a session by the time this renders, so this only has to cover
+  // the case where hydrate's background sync has not landed yet.
+  useEffect(() => {
+    if (!isSynced) void sync()
+  }, [isSynced, sync])
 
   // There is no bulk products-by-id endpoint, so fetch a catalogue page and
   // filter. Fine at this catalogue size; if it grows past a few hundred
@@ -33,15 +47,22 @@ export default function WishlistPage() {
   // saved items are gone when they are not.
   const failedToLoad = wishlistIds.length > 0 && isFetched && products.length === 0
 
-  const hasNothingSaved = wishlistIds.length === 0
+  // Distinguished from "empty" for the same reason: until the server list has
+  // arrived, an empty set means "not loaded yet", not "nothing saved".
+  const awaitingList = !isSynced && isSyncing
+  const hasNothingSaved = isSynced && wishlistIds.length === 0
+
+  const showSkeleton = awaitingList || (isLoading && wishlistIds.length > 0)
 
   return (
     <div className="space-y-4">
-      <h2 className="font-bold text-ink text-xl">Wishlist ({products.length})</h2>
+      <h2 className="font-bold text-ink text-xl">
+        {t('wishlist')} ({products.length})
+      </h2>
 
-      {isLoading && (
+      {showSkeleton && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          {Array.from({ length: Math.min(wishlistIds.length, 6) }).map((_, i) => (
+          {Array.from({ length: Math.max(Math.min(wishlistIds.length, 6), 3) }).map((_, i) => (
             <div key={i} className="bg-white border border-line rounded-md p-4 animate-pulse">
               <div className="aspect-square bg-line rounded-sm mb-3" />
               <div className="h-3 w-3/4 bg-line rounded-sm mb-2" />
@@ -51,7 +72,7 @@ export default function WishlistPage() {
         </div>
       )}
 
-      {!isLoading && failedToLoad && (
+      {!showSkeleton && failedToLoad && (
         <div className="bg-white border border-alert/30 rounded-md p-12 text-center">
           <AlertCircle className="w-12 h-12 text-alert mx-auto mb-4" />
           <p className="font-semibold text-ink mb-1">Could not load your saved items</p>
@@ -65,11 +86,13 @@ export default function WishlistPage() {
         </div>
       )}
 
-      {!isLoading && hasNothingSaved && (
+      {!showSkeleton && hasNothingSaved && (
         <div className="bg-white border border-line rounded-md p-12 text-center">
           <Heart className="w-12 h-12 text-stone mx-auto mb-4" />
           <p className="font-semibold text-ink mb-1">Your wishlist is empty</p>
-          <p className="text-sm text-stone mb-4">Save items to buy later.</p>
+          <p className="text-sm text-stone mb-4">
+            Save items to buy later — they will be here on any device you sign in on.
+          </p>
           <Link href={`/${locale}/shop`} className="btn-primary">
             Shop Now
           </Link>

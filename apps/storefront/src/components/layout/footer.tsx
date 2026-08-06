@@ -65,7 +65,9 @@ export function Footer() {
             <ul className="space-y-2.5">
               {[
                 { label: 'About Us', href: '/about' },
-                { label: 'Track Order', href: '/account/orders' },
+                // Public tracker, not /account/orders — this link is most
+                // often clicked by exactly the people who have no account.
+                { label: 'Track Order', href: '/track-order' },
                 { label: 'Kit Builder', href: '/kit-builder' },
                 { label: 'Blog', href: '/blog' },
                 { label: 'Sale', href: '/shop?filter=sale' },

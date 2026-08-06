@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from 'next-intl'
-import { CheckCircle, ChevronRight, Lock, CreditCard, ClipboardList } from 'lucide-react'
+import { CheckCircle, ChevronRight, Lock, CreditCard, ClipboardList, Copy, Check } from 'lucide-react'
 import { useCartStore } from '@/store/cart'
 import { useAuthStore } from '@/store/auth'
 import { placeOrder, ApiError } from '@/lib/api'
@@ -43,6 +43,57 @@ const STEPS: { key: Step; label: string; icon: typeof Lock }[] = [
 /** GA4's shipping_tier — one option today, but the field is required. */
 const SHIPPING_TIER = 'Standard'
 
+/**
+ * The order number on the confirmation screen.
+ *
+ * Tracking accepts the number alone, so this string is the only thing standing
+ * between a guest and their delivery status — and the only thing standing
+ * between a stranger and it too. Hence both halves of this component: it is
+ * shown large and copyable so the customer keeps it, and labelled as something
+ * to keep private so they think before forwarding a screenshot.
+ */
+function OrderNumberPanel({ number, isGuest }: { number: string; isGuest: boolean }) {
+  const [copied, setCopied] = useState(false)
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(number)
+      setCopied(true)
+      // Long enough to read, short enough that the button is ready again if
+      // the paste did not land where they meant it to.
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard access is denied over plain HTTP and in some in-app
+      // browsers. The number is selectable text either way, so failing
+      // quietly leaves the customer no worse off than before they clicked.
+    }
+  }
+
+  return (
+    <div className="bg-green-tint border border-green/20 rounded-md p-5">
+      <p className="text-xs font-semibold text-stone uppercase tracking-wider mb-2">
+        Your order number
+      </p>
+      <div className="flex items-center justify-center gap-3 flex-wrap">
+        <code className="serif text-2xl text-ink tracking-wide select-all">{number}</code>
+        <button
+          type="button"
+          onClick={copy}
+          className="p-2 rounded-sm hover:bg-white/60 transition-colors text-stone hover:text-green"
+          aria-label={copied ? 'Order number copied' : 'Copy order number'}
+        >
+          {copied ? <Check className="w-4 h-4 text-green" /> : <Copy className="w-4 h-4" />}
+        </button>
+      </div>
+      <p className="text-xs text-stone mt-3">
+        {isGuest
+          ? 'Save this — it is how you track your order, so keep it to yourself.'
+          : 'Also saved to your account. Keep it to yourself — anyone with it can view this order.'}
+      </p>
+    </div>
+  )
+}
+
 export function CheckoutClient() {
   const locale = useLocale()
   const items = useCartStore((s) => s.items)
@@ -52,6 +103,7 @@ export function CheckoutClient() {
   const clearCart = useCartStore((s) => s.clearCart)
 
   const user = useAuthStore((s) => s.user)
+  const isHydrating = useAuthStore((s) => s.isHydrating)
 
   const [step, setStep] = useState<Step>('address')
   // Assigned by the API on success. It used to be invented client-side, so the
@@ -274,15 +326,35 @@ export function CheckoutClient() {
           <CheckCircle className="w-10 h-10 text-green" />
         </div>
         <h2 className="serif text-3xl text-ink mb-3">Order Placed!</h2>
-        <p className="text-stone mb-2">
-          JazakAllah khair! Your order <strong className="text-ink">{orderNumber}</strong> has been placed successfully.
+        <p className="text-stone mb-6">
+          JazakAllah khair! Your order has been placed successfully.
         </p>
-        <p className="text-sm text-stone mb-8">
+
+        {/*
+          The order number is displayed rather than buried in a sentence
+          because it is now the credential for tracking — a guest who loses it
+          has no other way back to their delivery. Copyable for the same
+          reason: retyping a six-character token off a screen is where the
+          typos come from.
+        */}
+        <OrderNumberPanel number={orderNumber} isGuest={!user} />
+
+        <p className="text-sm text-stone mt-6 mb-8">
           You will receive a confirmation via WhatsApp shortly.
         </p>
+
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
-          <Link href={`/${locale}/account/orders`} className="btn-primary">
-            Track My Order
+          {/*
+            Guests go to the public tracker; signed-in customers go to their
+            order list, where the order is already waiting for them. Sending a
+            guest to /account/orders — which is what this button used to do —
+            landed them on a login wall holding a number they could not use.
+          */}
+          <Link
+            href={user ? `/${locale}/account/orders` : `/${locale}/track-order`}
+            className="btn-primary"
+          >
+            {user ? 'View My Orders' : 'Track My Order'}
           </Link>
           <Link href={`/${locale}/shop`} className="btn-outline">
             Continue Shopping
@@ -306,6 +378,45 @@ export function CheckoutClient() {
         <Link href={`/${locale}/shop`} className="btn-primary">
           Browse the shop
         </Link>
+      </div>
+    )
+  }
+
+  /*
+    `guest_checkout_enabled` is enforced server-side in orders.service.create,
+    so this is not the security check — it is the courtesy one. Without it a
+    guest filled in a full delivery address, chose a payment method, reached
+    the review step and only then learned they needed an account. Asking up
+    front costs them one click instead of five minutes.
+
+    `isHydrating` is respected so a signed-in customer refreshing checkout is
+    not shown a sign-in wall for the frame before their token is confirmed.
+  */
+  if (!isHydrating && !user && !settings.guestCheckoutEnabled) {
+    return (
+      <div className="container-max py-20 text-center max-w-lg">
+        <div className="w-20 h-20 bg-green-tint rounded-full flex items-center justify-center mx-auto mb-6">
+          <Lock className="w-9 h-9 text-green" />
+        </div>
+        <h2 className="serif text-2xl text-ink mb-3">Please sign in to check out</h2>
+        <p className="text-stone mb-8">
+          Guest checkout is turned off at the moment. Your basket is saved and will be
+          waiting for you.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <Link
+            href={`/${locale}/login?next=${encodeURIComponent(`/${locale}/checkout`)}`}
+            className="btn-primary"
+          >
+            Sign In
+          </Link>
+          <Link
+            href={`/${locale}/register?next=${encodeURIComponent(`/${locale}/checkout`)}`}
+            className="btn-outline"
+          >
+            Create Account
+          </Link>
+        </div>
       </div>
     )
   }

@@ -108,7 +108,21 @@ Products with tiered variants (Economy / Standard / Premium), multilingual names
 Guest carts keyed by `X-Session-Id`, issued by `POST /cart/session` — unsigned IDs are rejected, so a caller cannot invent one and read someone else's cart. Signing in merges the guest cart into the account's.
 
 ### Checkout and orders
-Guest and authenticated checkout. Order numbers are `YH-<year>-<n>` from 1001, derived inside the transaction with retry on unique-constraint collision (a `count()+1` scheme produced duplicates under concurrent checkout and drifted across year boundaries).
+Guest and authenticated checkout. Order numbers are `YH-<year>-<n>-<token>` — sequence from 1001, derived inside the transaction with retry on unique-constraint collision (a `count()+1` scheme produced duplicates under concurrent checkout and drifted across year boundaries), plus a six-character random token.
+
+**The token is a credential, not decoration.** See *Order tracking* below.
+
+### Order tracking
+Public, by order number alone: `POST /orders/track` with `{ number }`. No email or phone.
+
+That is only safe because of the token, and the two facts have to be maintained together:
+
+- **The token must stay random and `crypto`-sourced** (`randomOrderToken` in `orders.service.ts`). The sequence half is walkable by hand; when the number alone was accepted against a purely sequential scheme, `YH-2026-1001`, `1002`, … dumped the order table.
+- **The tracking response must stay narrow.** Status, timeline, items, shipping method, total, courier tracking number. No address, no name, no email or phone, no coupon or payment data. Someone who finds a number on a forwarded screenshot should learn where the parcel is, not where the customer lives.
+
+Throttled at 5/minute. POST rather than GET so the number stays out of URLs, browser history, access logs and `Referer` headers.
+
+The number format is validated in two mirrored places — `ORDER_NUMBER_REGEX` in `apps/api/src/orders/dto/track-order.dto.ts` and in `apps/storefront/src/lib/validation.ts`. The alphabet is Crockford Base32, so `I`, `L`, `O` and `U` are deliberately absent.
 
 ### Returns
 Customer-facing half complete: eligible orders, request creation, own-request listing. 7-day window from the recorded delivery timeline entry. Admin moderation queue is pending.
@@ -130,12 +144,28 @@ Categories, coupons, blog with category filtering, wishlist, saved addresses, pr
 ## Business Rules
 
 ### Guest checkout
-- Enabled by default, controlled by `guest_checkout_enabled` and **enforced server-side** — an admin toggle that only hides UI is decorative.
-- A guest order **must** carry a phone or email. `trackOrder` matches on exactly those fields, so an order without either could never be looked up by its own buyer.
+- Enabled by default, controlled by `guest_checkout_enabled` and **enforced server-side** — an admin toggle that only hides UI is decorative. The checkout UI also reads it, so a guest is asked to sign in before filling in an address rather than after.
+- A guest order **must** carry a phone or email. Not for tracking — the order number carries its own token now — but because a COD courier needs a number to call and support has no way to reach the buyer about a failed delivery without one.
 - Guest addresses are persisted with `userId = NULL` and exist only to be referenced by their order.
 
 ### Authentication required for
 My Orders, Wishlist, Saved Addresses, Profile, Returns, review submission.
+
+Enforced in two places, deliberately:
+
+- **The API is the boundary.** Every one of those routes carries `JwtAuthGuard` and scopes by `userId`.
+- **`RequireAuth` is the experience** (`components/auth/require-auth.tsx`). The customer token lives in `localStorage`, which middleware cannot read, so no server-side guard is possible for these routes — and none is needed, because the API already refuses. What the component fixes is a signed-out visitor reaching `/account/orders` and being shown a generic "could not load" panel with a Retry button that could never succeed.
+
+`RequireAuth` must wait on `isHydrating`. The persisted auth store starts at `user: null` and confirms the token asynchronously, so redirecting on `!user` alone throws valid sessions out on every hard refresh.
+
+`/account` itself is **not** guarded: a signed-out visitor gets the guest dashboard there. Someone who checked out as a guest has a real reason to be on that page and no account to sign in to.
+
+### The wishlist is server-side
+`/users/me/wishlist`, via `store/wishlist.ts`. It was previously a `persist`ed Zustand store in `localStorage` while the API endpoints sat unused — the two disagreed about what a wishlist was, and the local version lost a customer's saved items on a device change, silently.
+
+Guests do not get a local wishlist. The heart icon sends them to sign in, through `useWishlistToggle`, which is the single definition of what that control does on every surface. `LEGACY_KEY` in the store exists only to adopt ids already stranded on a device at first sign-in; nothing writes to it.
+
+Sign-out clears the in-memory list — otherwise one customer's saved items show to whoever signs in next on a shared phone.
 
 ### Orders
 - Minimum one line item; maximum 50; maximum 99 per line.
@@ -285,6 +315,17 @@ Availability beats cache coherence for this workload. The fallback is per-instan
 
 ### `getDefaultVariant` is the single definition of "which variant represents this product"
 Three surfaces previously decided independently and disagreed. Anything showing a product price must use it.
+
+### Tracking is by order number alone, so the number carries a random token
+The alternative — number plus the email or phone the order was placed with — was one field more for the customer and needed no schema change. It was rejected because the number is the thing people actually keep; the contact detail is the thing they guess wrong, especially when a relative placed the order. Moving the secret into the number keeps the lookup to a single field without making it enumerable.
+
+The cost is a migration that rewrote every historical order number, and a number that is longer to read aloud.
+
+### The wishlist requires an account
+Considered keeping it device-local for guests and syncing on sign-in. Rejected: a wishlist that silently disappears when someone clears their browser or picks up a different phone is worse than one that asks for an account first, and the "saved" state was a promise the local version could not keep.
+
+### `safeNextPath` validates `?next=` rather than trusting it
+The post-login destination comes from the query string, so it is attacker-controlled. A bare `router.push(next)` turns the sign-in form into an open redirect — one hop from a real login page to a convincing fake one. Protocol-relative (`//host`) and encoded variants are rejected specifically; they are the ones that look like paths.
 
 ### Testimonials remain static
 Curated marketing copy with signed-off wording that changes a few times a year, and no admin surface. `src/data/testimonials.ts` is editorial content, not a placeholder. The other six files in that directory were mock-data stand-ins and have been deleted.

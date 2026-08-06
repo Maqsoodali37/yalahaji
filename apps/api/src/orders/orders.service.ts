@@ -1,9 +1,38 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
+import { randomInt } from 'crypto'
 import { PrismaService } from '../prisma/prisma.service'
 import { SettingsService } from '../settings/settings.service'
 import { CreateOrderDto } from './dto/create-order.dto'
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto'
 import { OrderStatus, Prisma, Tier } from '@prisma/client'
+
+/**
+ * Crockford Base32 — `I`, `L`, `O` and `U` are absent so a customer reading a
+ * number off a WhatsApp message cannot confuse it with `1`, `0` or misread it
+ * as a word.
+ */
+const TOKEN_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+export const ORDER_TOKEN_LENGTH = 6
+
+/**
+ * The unguessable half of an order number.
+ *
+ * The sequence (`1001`, `1002`, …) is what operations and support read, but it
+ * is trivially walkable, so it cannot be what protects the order. Tracking is
+ * by number alone, which makes this token the entire credential — hence
+ * `crypto.randomInt` rather than `Math.random`, whose output is predictable
+ * from a handful of observed values.
+ *
+ * 32^6 ≈ 1.07e9 combinations against a 10-per-minute throttle: roughly two
+ * thousand years of guessing for one hit.
+ */
+function randomOrderToken(): string {
+  let out = ''
+  for (let i = 0; i < ORDER_TOKEN_LENGTH; i++) {
+    out += TOKEN_ALPHABET[randomInt(TOKEN_ALPHABET.length)]
+  }
+  return out
+}
 
 const ORDER_INCLUDE = {
   items: {
@@ -320,8 +349,9 @@ export class OrdersService {
   }
 
   /**
-   * Run `work` inside a transaction with a freshly derived `YH-<year>-<n>`
-   * order number, retrying on a unique-constraint collision.
+   * Run `work` inside a transaction with a freshly derived
+   * `YH-<year>-<n>-<token>` order number, retrying on a unique-constraint
+   * collision.
    *
    * Retries are bounded: a handful of attempts absorbs realistic checkout
    * concurrency, and anything beyond that is a genuine fault worth surfacing
@@ -337,15 +367,21 @@ export class OrdersService {
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       // Highest number issued this year, so a new year restarts at 1001 and
       // deleted rows never cause a number to be reused.
+      //
+      // The sequence is still ordered and still 4-digit padded, so this
+      // lexicographic `desc` continues to find the true maximum, and the
+      // random token that follows it does not disturb that ordering.
       const latest = await this.prisma.order.findFirst({
         where: { number: { startsWith: prefix } },
         orderBy: { number: 'desc' },
         select: { number: true },
       })
 
+      // `parseInt` stops at the first non-digit, so it reads the sequence out
+      // of `1001-K7QX9M` without needing to know the token is there.
       const lastSeq = latest ? parseInt(latest.number.slice(prefix.length), 10) : 1000
       const next = (Number.isNaN(lastSeq) ? 1000 : lastSeq) + 1 + attempt
-      const number = `${prefix}${String(next).padStart(4, '0')}`
+      const number = `${prefix}${String(next).padStart(4, '0')}-${randomOrderToken()}`
 
       try {
         return await this.prisma.$transaction((tx) => work(tx, number))
@@ -361,31 +397,38 @@ export class OrdersService {
   }
 
   /**
-   * Public order tracking.
+   * Public order tracking, by order number alone.
    *
-   * Order numbers are sequential and therefore guessable, so the number alone
-   * cannot be the credential — previously it was, and it returned the full
-   * order including the delivery address and the customer's name, email and
-   * phone. Walking `YH-2026-1001`, `1002`, … dumped the order table.
+   * **The order number is the credential.** That is only safe because it now
+   * carries a `crypto`-random Base32 token (`YH-2026-1001-K7QX9M`) — the
+   * sequence on its own is walkable, and when the number alone was accepted
+   * against a purely sequential scheme, `YH-2026-1001`, `1002`, … dumped the
+   * order table.
    *
-   * The caller must now also present the email or phone the order was placed
-   * with, and even then only gets fulfilment-relevant fields: no address, no
-   * contact details, no coupon or payment data. A mismatch is reported as a
-   * plain 404 so this cannot be used to test whether a number exists.
+   * Two properties therefore have to hold together, and neither survives
+   * without the other:
+   *
+   * 1. Every order number contains the random token. The migration that
+   *    introduced it backfilled historical rows for exactly this reason —
+   *    a single un-tokenised row is a publicly readable order.
+   * 2. The response stays limited to fulfilment-relevant fields: no address,
+   *    no name, no email or phone, no coupon or payment data. Someone who
+   *    finds a number on a shared screenshot learns the delivery status, not
+   *    where the customer lives.
+   *
+   * A miss is a plain 404, identical for a malformed number and a well-formed
+   * one that does not exist, so this cannot be used as an existence oracle.
    */
-  async trackByNumber(number: string, contact: string) {
+  async trackByNumber(number: string) {
     const order = await this.prisma.order.findFirst({
-      where: { number },
+      where: { number: number.trim().toUpperCase() },
       include: {
         items: { select: { name: true, image: true, quantity: true, tier: true, size: true, color: true } },
         timeline: { orderBy: { createdAt: 'desc' as const }, select: { status: true, note: true, createdAt: true } },
-        user: { select: { email: true, phone: true } },
       },
     })
 
-    const notFound = new NotFoundException(`Order ${number} not found.`)
-    if (!order) throw notFound
-    if (!this.contactMatches(order, contact)) throw notFound
+    if (!order) throw new NotFoundException(`Order ${number} not found.`)
 
     return {
       number: order.number,
@@ -397,27 +440,6 @@ export class OrdersService {
       items: order.items,
       timeline: order.timeline,
     }
-  }
-
-  /**
-   * Emails compare case-insensitively; phones compare on their last 10 digits
-   * so `+92 300 1234567`, `0300-1234567` and `03001234567` all match.
-   */
-  private contactMatches(
-    order: { guestEmail: string | null; guestPhone: string | null; user: { email: string | null; phone: string | null } | null },
-    contact: string,
-  ) {
-    const input = contact.trim()
-    if (!input) return false
-
-    const emails = [order.guestEmail, order.user?.email]
-    if (emails.some((e) => e && e.toLowerCase() === input.toLowerCase())) return true
-
-    const digits = (v: string) => v.replace(/\D/g, '').slice(-10)
-    const inputDigits = digits(input)
-    if (inputDigits.length < 10) return false
-
-    return [order.guestPhone, order.user?.phone].some((p) => p && digits(p) === inputDigits)
   }
 
   async findByNumber(number: string, userId?: string) {

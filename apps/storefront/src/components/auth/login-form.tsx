@@ -1,11 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Eye, EyeOff, Lock, Loader2 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { validate, hasErrors, required, type FieldErrors } from '@/lib/validation'
 import { FormField, inputClass } from '@/components/ui/form-field'
+import { safeNextPath } from '@/lib/auth-redirect'
 
 interface LoginValues {
   identifier: string
@@ -25,6 +26,7 @@ const loginRules = {
 
 export function LoginForm({ locale }: { locale: string }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { login, isLoading, error, clearError } = useAuthStore()
 
   const [showPassword, setShowPassword] = useState(false)
@@ -46,7 +48,9 @@ export function LoginForm({ locale }: { locale: string }) {
     if (hasErrors(found)) return
 
     const ok = await login(phone, password)
-    if (ok) router.push(`/${locale}/account`)
+    // `RequireAuth` records where they were headed. Validated rather than
+    // trusted — see safeNextPath.
+    if (ok) router.push(safeNextPath(searchParams.get('next'), locale))
   }
 
   return (

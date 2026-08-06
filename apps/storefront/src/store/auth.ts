@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { useWishlistStore } from './wishlist'
 import type { User } from '@/types'
 import {
   login as apiLogin,
@@ -40,6 +41,30 @@ function toIdentifier(input: string): string {
   return isValidPakistaniPhone(trimmed) ? normalisePhone(trimmed) : trimmed
 }
 
+/**
+ * Carry over what the shopper built before they had an account: the guest
+ * cart, and any wishlist ids stranded on this device by the old local-only
+ * wishlist.
+ *
+ * Every failure is swallowed on purpose. These run immediately after a
+ * successful sign-in, and the shopper is signed in whether or not they
+ * succeed — surfacing "could not merge your cart" at that moment would read
+ * as though the sign-in itself had failed. A missed merge is recoverable; a
+ * login that looks broken is not.
+ */
+async function absorbGuestState(): Promise<void> {
+  try {
+    await mergeGuestCart()
+  } catch {
+    /* ignore */
+  }
+  try {
+    await useWishlistStore.getState().adoptLocalIds()
+  } catch {
+    /* ignore */
+  }
+}
+
 function messageFor(e: unknown, fallback: string): string {
   if (e instanceof ApiError) {
     // A dropped connection and a rejected password are different problems and
@@ -66,14 +91,11 @@ export const useAuthStore = create<AuthStore>()(
           const user = await apiLogin(toIdentifier(identifier), password)
           set({ user, isLoading: false, error: null })
 
-          // Fold anything added while browsing as a guest into the real cart.
-          // A failure here must not fail the login — the shopper is signed in
-          // either way, and a missed merge is recoverable.
-          try {
-            await mergeGuestCart()
-          } catch {
-            /* ignore */
-          }
+          // Fold anything added while browsing as a guest into the real cart,
+          // and adopt any wishlist ids left on this device by the old
+          // local-only wishlist. Neither may fail the login — the shopper is
+          // signed in either way, and a missed merge is recoverable.
+          await absorbGuestState()
 
           return true
         } catch (e) {
@@ -108,11 +130,7 @@ export const useAuthStore = create<AuthStore>()(
           })
           set({ user, isLoading: false, error: null })
 
-          try {
-            await mergeGuestCart()
-          } catch {
-            /* ignore */
-          }
+          await absorbGuestState()
 
           return true
         } catch (e) {
@@ -126,6 +144,10 @@ export const useAuthStore = create<AuthStore>()(
 
       logout: () => {
         apiLogout()
+        // The wishlist is now the account's, not the device's. Leaving it in
+        // memory would show one customer's saved items to whoever signs in
+        // next on a shared phone.
+        useWishlistStore.getState().clear()
         set({ user: null, error: null })
       },
 
@@ -147,6 +169,12 @@ export const useAuthStore = create<AuthStore>()(
         try {
           const user = await fetchMe()
           set({ user, isHydrating: false })
+
+          // The wishlist lives on the server now, so a returning customer's
+          // saved items have to be fetched before any heart icon can render
+          // in the right state. Not awaited: the header should not wait on the
+          // wishlist to know who is signed in.
+          void useWishlistStore.getState().sync()
         } catch (e) {
           if (e instanceof ApiError && e.isAuthError) {
             apiLogout()

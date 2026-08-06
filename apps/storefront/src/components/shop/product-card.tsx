@@ -5,7 +5,7 @@ import { useLocale } from 'next-intl'
 import { Heart, BarChart2, Plus } from 'lucide-react'
 import type { Product } from '@/types'
 import { useCartStore } from '@/store/cart'
-import { useWishlistStore } from '@/store/wishlist'
+import { useWishlistToggle } from '@/lib/use-wishlist-toggle'
 import { useCompareStore } from '@/store/compare'
 import {
   formatPrice,
@@ -30,7 +30,7 @@ export function ProductCard({ product, view = 'grid' }: Props) {
 
   const addItem = useCartStore((s) => s.addItem)
   const openCart = useCartStore((s) => s.openCart)
-  const { isInWishlist, toggle: toggleWishlist } = useWishlistStore()
+  const { isInWishlist, onToggle: toggleWishlist, requiresSignIn } = useWishlistToggle()
   const { isInCompare, toggle: toggleCompare } = useCompareStore()
 
   // One variant drives the price shown, the struck-through compare-at price,
@@ -176,6 +176,14 @@ export function ProductCard({ product, view = 'grid' }: Props) {
       <div className="absolute top-2.5 end-2.5 flex flex-col gap-1.5">
         <button
           onClick={(e) => { e.preventDefault(); toggleWishlist(product.id) }}
+          aria-label={
+            requiresSignIn
+              ? 'Sign in to save this to your wishlist'
+              : inWishlist
+                ? 'Remove from wishlist'
+                : 'Save to wishlist'
+          }
+          aria-pressed={inWishlist}
           className={cn(
             'w-7 h-7 rounded-sm flex items-center justify-center shadow-sm transition-all duration-200',
             inWishlist

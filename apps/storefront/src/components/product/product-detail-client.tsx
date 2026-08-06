@@ -11,7 +11,7 @@ import {
 import type { Product, ProductVariant, Review } from '@/types'
 import { ProductImage } from '@/components/ui/product-image'
 import { useCartStore } from '@/store/cart'
-import { useWishlistStore } from '@/store/wishlist'
+import { useWishlistToggle } from '@/lib/use-wishlist-toggle'
 import {
   formatPrice, formatDiscount, getTierBadgeClass, getTierTextClass, getDefaultVariant, cn
 } from '@/lib/utils'
@@ -47,7 +47,7 @@ export function ProductDetailClient({ product, reviews, relatedProducts }: Props
 
   const addItem = useCartStore((s) => s.addItem)
   const openCart = useCartStore((s) => s.openCart)
-  const { isInWishlist, toggle: toggleWishlist } = useWishlistStore()
+  const { isInWishlist, onToggle: toggleWishlist, requiresSignIn } = useWishlistToggle()
   const inWishlist = isInWishlist(product.id)
 
   // One view_item per variant the visitor lands on or switches to. Keyed on
@@ -475,6 +475,14 @@ export function ProductDetailClient({ product, reviews, relatedProducts }: Props
 
               <button
                 onClick={() => toggleWishlist(product.id)}
+                aria-label={
+                  requiresSignIn
+                    ? 'Sign in to save this to your wishlist'
+                    : inWishlist
+                      ? 'Remove from wishlist'
+                      : 'Save to wishlist'
+                }
+                aria-pressed={inWishlist}
                 className={cn(
                   'w-12 h-12 flex items-center justify-center rounded-sm border transition-colors',
                   inWishlist

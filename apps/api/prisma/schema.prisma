@@ -420,7 +420,10 @@ model CartItem {
 
 model Order {
   id             String         @id @default(uuid())
-  number         String         @unique // YH-2025-XXXX
+  // YH-<year>-<sequence>-<token>, e.g. YH-2026-1001-K7QX9M. The token is not
+  // decoration: public tracking accepts the number alone, so it is the
+  // credential. See trackByNumber in orders.service.ts.
+  number         String         @unique
   userId         String?
   guestEmail     String?
   guestPhone     String?

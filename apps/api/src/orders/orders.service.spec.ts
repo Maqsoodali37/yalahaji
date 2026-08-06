@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing'
-import { BadRequestException } from '@nestjs/common'
+import { BadRequestException, NotFoundException } from '@nestjs/common'
 import { OrdersService } from './orders.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { SettingsService } from '../settings/settings.service'
@@ -65,8 +65,10 @@ describe('OrdersService.create — request guards', () => {
   }
 
   it('rejects a guest order with no phone and no email', async () => {
-    // Such an order cannot be tracked by its buyer — `trackOrder` matches on
-    // exactly these two fields — and support has no way to chase it.
+    // Tracking no longer matches on these fields — the order number carries
+    // its own token — but the requirement stands for a different reason:
+    // a COD courier needs a number to call, and support has no way to reach
+    // the buyer about a failed delivery without one.
     await expect(service.create(dto(), undefined)).rejects.toBeInstanceOf(BadRequestException)
 
     expect(prisma.address.create).not.toHaveBeenCalled()
@@ -180,6 +182,129 @@ describe('OrdersService.create — request guards', () => {
         service.create(dto({ guestPhone: '+923001234567' }), undefined),
       ).rejects.toThrow(/Variant v-1 not found/)
     })
+  })
+})
+
+/**
+ * Public tracking accepts the order number and nothing else, so these tests
+ * guard the two properties that make that safe: the number is unguessable,
+ * and the response carries nothing that identifies the customer.
+ */
+describe('OrdersService.trackByNumber', () => {
+  let service: OrdersService
+
+  const prisma = {
+    order: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+    address: { findFirst: jest.fn(), create: jest.fn() },
+    productVariant: { findUnique: jest.fn() },
+    coupon: { findFirst: jest.fn() },
+    setting: { findUnique: jest.fn() },
+    $transaction: jest.fn(),
+  }
+
+  const settings = {
+    getNumber: jest.fn(async (_k: string, f: number) => f),
+    getBoolean: jest.fn(async (_k: string, f: boolean) => f),
+    getString: jest.fn(async (_k: string, f: string) => f),
+  }
+
+  beforeEach(async () => {
+    jest.clearAllMocks()
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        OrdersService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: SettingsService, useValue: settings },
+      ],
+    }).compile()
+    service = moduleRef.get(OrdersService)
+  })
+
+  const storedOrder = {
+    number: 'YH-2026-1001-K7QX9M',
+    status: 'shipped',
+    shippingMethod: 'standard',
+    trackingNumber: 'TCS-123',
+    total: 250000,
+    createdAt: new Date('2026-08-01'),
+    items: [{ name: 'Ihram Set', image: null, quantity: 1, tier: 'standard', size: null, color: null }],
+    timeline: [{ status: 'shipped', note: null, createdAt: new Date('2026-08-02') }],
+    // Fields the row carries but the caller must never receive.
+    guestEmail: 'buyer@example.com',
+    guestPhone: '+923001234567',
+    address: { fullName: 'Muhammad Ali', addressLine1: 'House 42' },
+    user: { email: 'buyer@example.com', phone: '+923001234567' },
+    couponId: 'coupon-1',
+    paymentMethod: 'cod',
+  }
+
+  it('returns nothing that identifies the customer', async () => {
+    // The number travels in WhatsApp messages and screenshots. Someone who
+    // ends up holding one should learn where the parcel is, not where the
+    // customer lives or how to contact them.
+    prisma.order.findFirst.mockResolvedValue(storedOrder)
+
+    const result = await service.trackByNumber('YH-2026-1001-K7QX9M')
+
+    for (const leaked of ['guestEmail', 'guestPhone', 'address', 'user', 'couponId', 'paymentMethod']) {
+      expect(result).not.toHaveProperty(leaked)
+    }
+    expect(result.number).toBe('YH-2026-1001-K7QX9M')
+    expect(result.status).toBe('shipped')
+  })
+
+  it('reports a miss as 404 rather than confirming the order exists', async () => {
+    prisma.order.findFirst.mockResolvedValue(null)
+    await expect(service.trackByNumber('YH-2026-9999-ZZZZZZ')).rejects.toBeInstanceOf(
+      NotFoundException,
+    )
+  })
+
+  it('matches case-insensitively so a number typed in lower case still works', async () => {
+    prisma.order.findFirst.mockResolvedValue(storedOrder)
+
+    await service.trackByNumber('  yh-2026-1001-k7qx9m  ')
+
+    expect(prisma.order.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { number: 'YH-2026-1001-K7QX9M' } }),
+    )
+  })
+})
+
+describe('TrackOrderDto — order number format', () => {
+  /**
+   * The token is the entire credential for public tracking. If this DTO ever
+   * accepts a bare sequential number again, `YH-2026-1001`, `1002`, … walks
+   * the order table — which is exactly what the token was introduced to stop.
+   */
+  async function errorsFor(number: unknown) {
+    const { validate } = await import('class-validator')
+    const { plainToInstance } = await import('class-transformer')
+    const { TrackOrderDto } = await import('./dto/track-order.dto')
+    return validate(plainToInstance(TrackOrderDto, { number }))
+  }
+
+  it('rejects a bare sequential number with no token', async () => {
+    expect(await errorsFor('YH-2026-1001')).toHaveLength(1)
+  })
+
+  it('accepts a full tokenised number, in any case, with surrounding space', async () => {
+    expect(await errorsFor('YH-2026-1001-K7QX9M')).toHaveLength(0)
+    expect(await errorsFor('  yh-2026-1001-k7qx9m  ')).toHaveLength(0)
+  })
+
+  it('rejects tokens containing the excluded Base32 letters', async () => {
+    // I, L, O and U are not in the alphabet, so a number containing one is a
+    // misreading of 1 or 0 rather than a real order. Failing here gives the
+    // customer the format hint instead of a bare "not found".
+    for (const bad of ['YH-2026-1001-K7QXIM', 'YH-2026-1001-K7QXOM', 'YH-2026-1001-K7QXLU']) {
+      expect(await errorsFor(bad)).toHaveLength(1)
+    }
+  })
+
+  it('rejects a token of the wrong length', async () => {
+    expect(await errorsFor('YH-2026-1001-K7QX9')).toHaveLength(1)
+    expect(await errorsFor('YH-2026-1001-K7QX9MM')).toHaveLength(1)
   })
 })
 
