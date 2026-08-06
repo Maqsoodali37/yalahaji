@@ -35,6 +35,20 @@ Run `npm run build` in `apps/storefront` and `apps/admin` on a real machine and 
 
 ## Medium
 
+### Confirm the 404 routes on real hardware
+
+The 404 work is implemented and typechecks, but no HTTP status could be observed in the dev sandbox — `next dev` dies with the same bus error as `next build` (see the build task above). On a real machine, with the API running, confirm each of these returns **404** and renders the branded page with a clean console:
+
+`/random-page` · `/en/random-page` · `/en/products/non-existing-product` · `/en/shop/non-existing-category` · `/en/collections/invalid-slug` · `/en/blog/invalid-slug` · `/en/shop/a/b/c` · `/xx/anything`
+
+Then check the two error paths are still distinct: stop the API and confirm `/en/products/<a real slug>` renders `error.tsx`, **not** the 404 page.
+
+### `GET /categories` still lists disabled categories
+
+`findBySlug` now excludes `isActive: false`, so a disabled category 404s. `findAll` does not filter, so the storefront nav and filter sidebar can still link to one — a dead link that correctly 404s but should never have been offered.
+
+Not fixed with `findBySlug` because the same endpoint is what the (unbuilt) admin categories screen will list from, and staff need to see disabled rows. Decide that first: either filter `findAll` and give admin its own listing, or pass an `includeInactive` flag.
+
 ### Admin panel — 6 pages are still `ComingSoon` stubs
 
 `apps/admin/src/app/(dashboard)/`: `analytics`, `blog`, `categories`, `coupons`, `customers`, `reviews`.

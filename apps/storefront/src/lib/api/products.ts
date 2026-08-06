@@ -1,4 +1,4 @@
-import { apiFetch, apiFetchSafe, buildQuery } from './client'
+import { apiFetch, apiFetchSafe, apiFetchResource, buildQuery } from './client'
 import { adaptProduct, rupeesToPaisas } from './adapters'
 import type { Paginated, WireProduct } from './wire'
 import type { Product, Tier } from '@/types'
@@ -73,11 +73,14 @@ export async function fetchProducts(filters: ProductFilters = {}): Promise<Produ
   }
 }
 
-/** Returns null rather than throwing so a page can render its own 404. */
+/**
+ * Null means the product is genuinely missing — deleted, unpublished, or a
+ * slug that never existed — so the page can call `notFound()`. An unreachable
+ * API throws instead of reading as missing; see `apiFetchResource`.
+ */
 export async function fetchProductBySlug(slug: string): Promise<Product | null> {
-  const wire = await apiFetchSafe<WireProduct | null>(
+  const wire = await apiFetchResource<WireProduct>(
     `/products/${encodeURIComponent(slug)}`,
-    null,
     PUBLIC_READ,
   )
   return wire ? adaptProduct(wire) : null

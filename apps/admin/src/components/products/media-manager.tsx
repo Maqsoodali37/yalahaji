@@ -11,12 +11,20 @@ import { cn } from '@/lib/utils'
 import type { MediaInput } from '@/types'
 
 /**
- * Mirrors ALLOWED_UPLOAD_MIME and MAX_UPLOAD_BYTES in
- * `apps/api/src/media/media.service.ts`. The API copy is the one that
- * protects the bucket; this copy exists so a 12 MB photo fails instantly
- * instead of after a slow upload on a Pakistani mobile connection.
+ * Formats this component will offer in the file picker.
+ *
+ * Deliberately narrower than what the API might accept. The server derives its
+ * list from what its libvips build can actually decode, and AVIF/HEIC input is
+ * missing from several of the prebuilt sharp binaries — so listing them here
+ * would invite a file that passes the browser check and is then refused after
+ * the upload has already been paid for.
+ *
+ * These three are supported by every sharp build. Anything else is better
+ * converted by the person before uploading than half-accepted by us.
  */
-const ACCEPTED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/avif']
+const ACCEPTED_MIME = ['image/jpeg', 'image/png', 'image/webp']
+
+/** Mirrors MAX_UPLOAD_BYTES in `apps/api/src/media/media.service.ts`. */
 const MAX_BYTES = 10 * 1024 * 1024
 
 const ACCEPT_ATTR = ACCEPTED_MIME.join(',')
@@ -87,7 +95,12 @@ export function MediaManager({ images, onChange, disabled }: MediaManagerProps) 
     const rejected: string[] = []
     const accepted = selected.filter((file) => {
       if (!ACCEPTED_MIME.includes(file.type)) {
-        rejected.push(`${file.name} — unsupported type`)
+        // `file.type` is derived from the extension and is empty for anything
+        // the OS does not recognise, so say what we saw rather than asserting
+        // what the file is — the server sniffs the actual bytes.
+        rejected.push(
+          `${file.name} — ${file.type || 'unrecognised type'}. Use JPEG, PNG or WebP.`,
+        )
         return false
       }
       if (file.size > MAX_BYTES) {
@@ -280,8 +293,9 @@ export function MediaManager({ images, onChange, disabled }: MediaManagerProps) 
           {uploading ? 'Uploading…' : 'Add photos'}
         </Button>
         <p className="text-xs text-ink-3">
-          JPEG, PNG, WebP or AVIF. Up to 10 MB each — resized and converted to WebP
-          on upload.
+          JPEG, PNG or WebP, up to 10 MB each — resized and converted to WebP on
+          upload. iPhone photos are usually HEIC: export as JPEG first, as renaming
+          the file does not change what is inside it.
         </p>
       </div>
 

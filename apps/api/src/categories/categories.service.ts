@@ -22,10 +22,19 @@ export class CategoriesService {
     return cats
   }
 
+  /**
+   * `isActive` is part of the lookup, not a field the caller filters on
+   * afterwards — a disabled category must read as absent, exactly like
+   * `products.findBySlug`. Without it the storefront rendered a category
+   * staff had switched off, with its products still buyable.
+   */
   async findBySlug(slug: string) {
     const cat = await this.prisma.category.findUnique({
-      where: { slug },
-      include: { children: { orderBy: { order: 'asc' } }, parent: true },
+      where: { slug, isActive: true },
+      include: {
+        children: { where: { isActive: true }, orderBy: { order: 'asc' } },
+        parent: true,
+      },
     })
     if (!cat) throw new NotFoundException(`Category ${slug} not found.`)
     return cat

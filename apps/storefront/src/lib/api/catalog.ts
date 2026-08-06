@@ -1,4 +1,4 @@
-import { apiFetch, apiFetchSafe, buildQuery } from './client'
+import { apiFetch, apiFetchSafe, apiFetchResource, buildQuery } from './client'
 import {
   adaptCategory,
   adaptReview,
@@ -22,10 +22,10 @@ export async function fetchCategories(): Promise<Category[]> {
   return wire.map(adaptCategory)
 }
 
+/** Null means the category is missing or disabled — the page 404s on it. */
 export async function fetchCategoryBySlug(slug: string): Promise<Category | null> {
-  const wire = await apiFetchSafe<WireCategory | null>(
+  const wire = await apiFetchResource<WireCategory>(
     `/categories/${encodeURIComponent(slug)}`,
-    null,
     PUBLIC_READ,
   )
   return wire ? adaptCategory(wire) : null
@@ -143,10 +143,10 @@ export async function fetchBlogCategories(): Promise<BlogCategorySummary[]> {
   }))
 }
 
+/** Null means the post is missing or unpublished — the page 404s on it. */
 export async function fetchBlogPostBySlug(slug: string): Promise<BlogPost | null> {
-  const wire = await apiFetchSafe<WireBlogPost | null>(
+  const wire = await apiFetchResource<WireBlogPost>(
     `/blog/${encodeURIComponent(slug)}`,
-    null,
     PUBLIC_READ,
   )
   return wire ? adaptBlogPost(wire) : null

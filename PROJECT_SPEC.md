@@ -55,6 +55,17 @@ Roles: `customer`, `admin`, `manager`, `support`, `fulfillment`. Grouped as `STA
 - Comments explain **why**, not what. A comment restating the code is noise; a comment explaining a non-obvious constraint is the point.
 - No raw SQL anywhere. All database access goes through Prisma.
 - Money is integers, never floats.
+- **Never default-import a CommonJS package in `apps/api`.** See below.
+
+### `apps/api` sets `allowSyntheticDefaultImports` without `esModuleInterop`
+
+That combination silences the compiler without changing the emit. For a package declaring `export =` — sharp, and most older CJS libraries — `import x from 'pkg'` compiles to `pkg_1.default`, which is `undefined` at runtime. It typechecks, it builds, and it throws `is not a function` the first time the code path actually runs.
+
+This shipped: `media.service.ts` used `import sharp from 'sharp'`, so **every** upload threw a `TypeError` that a `catch` reported to staff as "that file could not be read as an image" — pointing at their perfectly good JPEG rather than at the import.
+
+Use `import * as sharp from 'sharp'`, matching `import * as Minio from 'minio'` in the same file. A default import is only safe where the package genuinely exposes `.default` (`meilisearch` does).
+
+Turning on `esModuleInterop` would fix the class of bug properly, but it changes the emit for every namespace import in the app and needs its own pass.
 
 ---
 
@@ -80,12 +91,17 @@ Checkout sends only variant IDs and quantities. The API recomputes every price, 
 
 The storefront mirrors the calculation for display only — and it must stay in sync, or checkout quotes one figure and charges another.
 
-### `apiFetch` vs `apiFetchSafe`
+### `apiFetch` vs `apiFetchSafe` vs `apiFetchResource`
 
-- `apiFetchSafe(path, fallback, opts)` — public reads that must not fail a page render. Degrades to `fallback` when the API is unreachable or 404s.
+- `apiFetchSafe(path, fallback, opts)` — public **list** reads that must not fail a page render. Degrades to `fallback` when the API is unreachable or 404s.
+- `apiFetchResource<T>(path, opts)` — a read where the resource **is** the page: `/products/[slug]`, `/shop/[category]`, `/blog/[slug]`. Returns `null` only when the resource is genuinely absent, and rethrows everything else so `error.tsx` handles it.
 - `apiFetch(path, opts)` — anything the user initiated. A rejected submission must surface to the person who made it, not be swallowed.
 
 **Trap:** because `apiFetchSafe` never throws, TanStack Query's `isError` never fires for it. A failed fetch looks like an empty result. Screens driven by `apiFetchSafe` need to distinguish "genuinely empty" from "did not load" some other way — see the wishlist and compare pages.
+
+That trap is exactly why detail pages use `apiFetchResource` instead. `apiFetchSafe` collapses "this product does not exist" and "the API is down" into the same `null`, so during an outage every bookmarked product page tells the customer their product is gone — with a 404 status that invites search engines to drop the URL. **A missing resource is a 404; a broken backend is an error boundary.**
+
+`apiFetchResource` also treats a 200 carrying `null` or `{}` as absent. A bare truthiness check hands `{}` to an adapter, which reads a field off `undefined` and crashes the server render — which the browser reports as a client-side exception, not a 404.
 
 ### Shop configuration lives in the `settings` table
 
@@ -276,6 +292,23 @@ Rules come from `lib/validation.ts`. `required` trims first: a field of spaces s
 
 ### Loading, error and empty states
 Every API-backed view needs all four: pending, error (with retry), empty, and populated. Distinguish "empty" from "failed to load" — telling someone their wishlist is empty when the catalogue simply did not load suggests their saved items are gone.
+
+### 404 and error boundaries
+
+Four files, and the reason each exists is different:
+
+| File | Covers |
+|---|---|
+| `app/[locale]/not-found.tsx` | Every 404 inside the locale tree. Renders `NotFoundView` with header, footer and i18n. |
+| `app/[locale]/[...rest]/page.tsx` | Catch-all that calls `notFound()`, so an unmatched URL *reaches* the boundary above. |
+| `app/[locale]/error.tsx` | Runtime failures — an unreachable API, a bug. Not missing resources. |
+| `app/not-found.tsx`, `app/global-error.tsx` | The two cases that render outside `[locale]/layout.tsx`. |
+
+**The catch-all is not optional.** `app/layout.tsx` renders bare `children` — `[locale]/layout.tsx` owns `<html>` and `<body>` so it can set `lang` and `dir`. An unmatched path is resolved *before* Next enters the `[locale]` segment, so it rendered the global `not-found` under a root layout that emits no document element and no `NextIntlClientProvider`. The result was an unhydratable page and `Application error: a client-side exception has occurred` in place of a 404. Making the URL match `[...rest]` puts it inside the locale layout, where the boundary has everything it needs.
+
+For the same reason, **`app/not-found.tsx` and `app/global-error.tsx` render their own `<html>` and `<body>`** and depend on no provider. They are reached precisely when the locale layout is not available — an invalid locale, or a failure in the layout itself. A fragment there reintroduces the original bug.
+
+`notFound()` sets HTTP 404 regardless of which file renders; the status does not come from the filename. `not-found.tsx` cannot export `metadata`, so the noindex tag is rendered in `NotFoundView` (React 19 hoists it into `<head>`).
 
 ### Honesty
 No placeholder fallbacks that look like real data. Checkout once rendered `address.fullName || 'Muhammad Ali'`, so an empty form displayed a plausible delivery address. No dead controls — a button with no handler is worse than no button.

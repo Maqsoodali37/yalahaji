@@ -9,7 +9,7 @@ import {
   PayloadTooLargeException,
 } from '@nestjs/common'
 import { ApiTags, ApiCookieAuth, ApiConsumes, ApiOperation } from '@nestjs/swagger'
-import { MediaService, ALLOWED_UPLOAD_MIME, MAX_UPLOAD_BYTES } from './media.service'
+import { MediaService, MAX_UPLOAD_BYTES } from './media.service'
 import { DeleteMediaDto } from './dto/delete-media.dto'
 import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard'
 import { RolesGuard } from '../auth/roles.guard'
@@ -35,9 +35,12 @@ export class MediaController {
     const data = await req.file()
     if (!data) throw new BadRequestException('No file uploaded.')
 
-    if (!ALLOWED_UPLOAD_MIME.includes(data.mimetype)) {
+    // A cheap first pass only. `File.type` comes from the filename extension,
+    // so this catches an honestly-named .pdf but not a HEIC renamed to .jpeg —
+    // sharp is what actually decides, and it explains itself when it refuses.
+    if (!this.mediaService.allowedMime.includes(data.mimetype)) {
       throw new BadRequestException(
-        `Unsupported file type. Accepted: ${ALLOWED_UPLOAD_MIME.join(', ')}.`,
+        `Unsupported file type. Accepted: ${this.mediaService.allowedLabel}.`,
       )
     }
 

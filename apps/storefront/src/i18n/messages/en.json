@@ -393,5 +393,24 @@
     "profile": "profile",
     "returns": "returns",
     "account": "account"
+  },
+  "notFound": {
+    "code": "404",
+    "title": "Page Not Found",
+    "body": "The page you're looking for doesn't exist, or it may have moved. Let's get you back on track.",
+    "home": "Back to Home",
+    "shop": "Continue Shopping",
+    "searchHeading": "Or search the store",
+    "searchLabel": "Search products",
+    "searchPlaceholder": "Search ihram, attar, kits...",
+    "popular": "Popular sections",
+    "searchNoResults": "No products found for “{query}”"
+  },
+  "errorPage": {
+    "title": "Something went wrong",
+    "body": "We hit an unexpected problem loading this page. This one is on us — please try again.",
+    "retry": "Try again",
+    "home": "Back to Home",
+    "reference": "Reference: {digest}"
   }
 }

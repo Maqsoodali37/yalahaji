@@ -197,3 +197,38 @@ export async function apiFetchSafe<T>(
     return fallback
   }
 }
+
+/**
+ * For a read where the resource *is* the page — `/products/[slug]`,
+ * `/shop/[category]`, `/blog/[slug]`.
+ *
+ * Returns `null` only when the resource is genuinely absent, and rethrows
+ * everything else so the route's `error.tsx` handles it.
+ *
+ * `apiFetchSafe` is wrong here: it collapses "this product does not exist"
+ * and "the API is unreachable" into the same `null`, so during an outage
+ * every bookmarked product page tells the customer their product is gone —
+ * with a 404 status that invites search engines to drop the URL. A missing
+ * resource is a 404; a broken backend is an error boundary.
+ *
+ * Absent also covers a 200 carrying `null` or `{}`. The API has returned an
+ * empty body for a missing row before, and a bare truthiness check hands `{}`
+ * straight to an adapter, which reads a field off `undefined` — that is a
+ * runtime crash on the server render, which is what the browser reports as
+ * "Application error: a client-side exception has occurred".
+ */
+export async function apiFetchResource<T extends { id?: unknown }>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T | null> {
+  let payload: T | null
+  try {
+    payload = await apiFetch<T | null>(path, options)
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null
+    throw e
+  }
+
+  if (!payload || typeof payload !== 'object' || payload.id === undefined) return null
+  return payload
+}
