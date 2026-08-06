@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing'
 import { BadRequestException, NotFoundException } from '@nestjs/common'
-import { OrdersService } from './orders.service'
+import { OrdersService, canTransitionOrder } from './orders.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { SettingsService } from '../settings/settings.service'
 import { CreateOrderDto } from './dto/create-order.dto'
@@ -305,6 +305,38 @@ describe('TrackOrderDto — order number format', () => {
   it('rejects a token of the wrong length', async () => {
     expect(await errorsFor('YH-2026-1001-K7QX9')).toHaveLength(1)
     expect(await errorsFor('YH-2026-1001-K7QX9MM')).toHaveLength(1)
+  })
+})
+
+/**
+ * Status transitions are enforced server-side, not only narrowed in the admin
+ * dropdown. These lock the flow so a future edit cannot quietly allow a jump
+ * the operations process does not permit (e.g. pending → delivered) or reopen
+ * a terminal order.
+ */
+describe('order status transitions', () => {
+  it('allows each step of the forward flow', () => {
+    expect(canTransitionOrder('pending', 'confirmed')).toBe(true)
+    expect(canTransitionOrder('confirmed', 'processing')).toBe(true)
+    expect(canTransitionOrder('processing', 'packed')).toBe(true)
+    expect(canTransitionOrder('packed', 'shipped')).toBe(true)
+    expect(canTransitionOrder('shipped', 'out_for_delivery')).toBe(true)
+    expect(canTransitionOrder('out_for_delivery', 'delivered')).toBe(true)
+    expect(canTransitionOrder('delivered', 'refunded')).toBe(true)
+  })
+
+  it('allows cancelling only before dispatch', () => {
+    expect(canTransitionOrder('pending', 'cancelled')).toBe(true)
+    expect(canTransitionOrder('packed', 'cancelled')).toBe(true)
+    expect(canTransitionOrder('shipped', 'cancelled')).toBe(false)
+  })
+
+  it('rejects skips and reopening terminal states', () => {
+    expect(canTransitionOrder('pending', 'delivered')).toBe(false)
+    expect(canTransitionOrder('cancelled', 'confirmed')).toBe(false)
+    expect(canTransitionOrder('refunded', 'delivered')).toBe(false)
+    // Same-status is not a legal move — it would only add an empty timeline row.
+    expect(canTransitionOrder('pending', 'pending')).toBe(false)
   })
 })
 

@@ -1,17 +1,42 @@
-import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards, HttpCode } from '@nestjs/common'
+import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards, HttpCode, Res } from '@nestjs/common'
+import { Response } from 'express'
 import { ApiTags, ApiBearerAuth, ApiCookieAuth, ApiOperation } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
-import { OrderStatus } from '@prisma/client'
-import { OrdersService } from './orders.service'
+import { OrdersService, OrderAdminFilters } from './orders.service'
 import { CreateOrderDto } from './dto/create-order.dto'
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto'
 import { TrackOrderDto } from './dto/track-order.dto'
+import { OrderQueryDto } from './dto/order-query.dto'
+import { UpdateTrackingDto } from './dto/update-tracking.dto'
+import { UpdatePaymentStatusDto } from './dto/update-payment-status.dto'
+import { BulkStatusDto } from './dto/bulk-status.dto'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard'
 import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard'
 import { RolesGuard } from '../auth/roles.guard'
 import { Roles, STAFF_ORDERS } from '../auth/roles.decorator'
 import { CurrentUser } from '../auth/current-user.decorator'
+
+/** Map validated query params to the service's filter shape (dates parsed). */
+function toOrderFilters(q: OrderQueryDto): OrderAdminFilters {
+  return {
+    status: q.status,
+    search: q.search,
+    paymentStatus: q.paymentStatus,
+    paymentMethod: q.paymentMethod,
+    shippingMethod: q.shippingMethod,
+    // A date-only bound is widened to the whole day so `dateTo = 6 Aug` also
+    // matches an order placed at 6 Aug 18:00.
+    dateFrom: q.dateFrom ? new Date(q.dateFrom) : undefined,
+    dateTo: q.dateTo ? new Date(new Date(q.dateTo).getTime() + 24 * 60 * 60 * 1000 - 1) : undefined,
+    minTotal: q.minTotal,
+    maxTotal: q.maxTotal,
+    city: q.city,
+    province: q.province,
+    sort: q.sort,
+    order: q.order === 'asc' ? 'asc' : q.order === 'desc' ? 'desc' : undefined,
+  }
+}
 
 @ApiTags('orders')
 @Controller('orders')
@@ -48,14 +73,9 @@ export class OrdersController {
   @UseGuards(AdminJwtAuthGuard, RolesGuard)
   @Roles(...STAFF_ORDERS)
   @ApiCookieAuth()
-  @ApiOperation({ summary: 'Admin: all orders' })
-  findAll(
-    @Query('page') page = '1',
-    @Query('limit') limit = '20',
-    @Query('status') status?: OrderStatus,
-    @Query('search') search?: string,
-  ) {
-    return this.ordersService.findAll(undefined, +page, +limit, { status, search })
+  @ApiOperation({ summary: 'Admin: all orders (filter, sort, paginate)' })
+  findAll(@Query() query: OrderQueryDto) {
+    return this.ordersService.findAll(undefined, +(query.page ?? '1'), +(query.limit ?? '20'), toOrderFilters(query))
   }
 
   @Get('admin/stats')
@@ -65,6 +85,34 @@ export class OrdersController {
   @ApiOperation({ summary: 'Admin: revenue and order KPIs' })
   adminStats(@Query('days') days = '30') {
     return this.ordersService.adminStats(+days)
+  }
+
+  /**
+   * CSV of the current filtered view. Declared before `admin/:id` so the
+   * static path is not swallowed by the parameterised route.
+   */
+  @Get('admin/export')
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles(...STAFF_ORDERS)
+  @ApiCookieAuth()
+  @ApiOperation({ summary: 'Admin: export the current view as CSV' })
+  async export(@Query() query: OrderQueryDto, @Res({ passthrough: true }) res: Response) {
+    const csv = await this.ordersService.exportCsv(toOrderFilters(query))
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="orders.csv"',
+    })
+    return csv
+  }
+
+  @Post('admin/bulk-status')
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles(...STAFF_ORDERS)
+  @HttpCode(200)
+  @ApiCookieAuth()
+  @ApiOperation({ summary: 'Admin: apply one status to many orders' })
+  bulkStatus(@Body() dto: BulkStatusDto) {
+    return this.ordersService.bulkUpdateStatus(dto.ids, dto.status, dto.note)
   }
 
   @Get('admin/:id')
@@ -108,6 +156,24 @@ export class OrdersController {
   @ApiOperation({ summary: 'Admin: update order status' })
   updateStatus(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto) {
     return this.ordersService.updateStatus(id, dto)
+  }
+
+  @Patch(':id/tracking')
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles(...STAFF_ORDERS)
+  @ApiCookieAuth()
+  @ApiOperation({ summary: 'Admin: set the courier tracking number' })
+  setTracking(@Param('id') id: string, @Body() dto: UpdateTrackingDto) {
+    return this.ordersService.setTracking(id, dto.trackingNumber)
+  }
+
+  @Patch(':id/payment-status')
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles(...STAFF_ORDERS)
+  @ApiCookieAuth()
+  @ApiOperation({ summary: 'Admin: mark payment paid / unpaid / refunded' })
+  setPaymentStatus(@Param('id') id: string, @Body() dto: UpdatePaymentStatusDto) {
+    return this.ordersService.setPaymentStatus(id, dto.paymentStatus, dto.note)
   }
 
   @Patch(':id/cancel')

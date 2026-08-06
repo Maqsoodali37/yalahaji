@@ -1,19 +1,23 @@
 'use client'
 
-import { use } from 'react'
+import { use, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, MapPin, User, Printer } from 'lucide-react'
-import { useOrder } from '@/hooks/use-orders'
+import { ArrowLeft, MapPin, User, Printer, Truck, CreditCard } from 'lucide-react'
+import { useOrder, useSetTracking, useSetPaymentStatus } from '@/hooks/use-orders'
 import { StatusUpdater } from '@/components/orders/status-updater'
 import { Panel, PanelHeader, PageHeader, Badge, ErrorState, Skeleton } from '@/components/ui/panel'
 import { Button } from '@/components/ui/button'
+import { Input, Select, FormField } from '@/components/ui/field'
+import { useToast } from '@/components/ui/toast'
 import {
   formatPrice,
   formatDateTime,
   statusClasses,
   paymentStatusClasses,
   titleCase,
+  PAYMENT_STATUSES,
 } from '@/lib/utils'
+import type { PaymentStatus } from '@/types'
 
 export default function OrderDetailPage({
   params,
@@ -44,7 +48,8 @@ export default function OrderDetailPage({
     )
   }
 
-  const customerName = order.user?.name ?? order.address?.name ?? 'Guest'
+  // The API returns the raw Prisma Address: fullName / addressLine1 / addressLine2.
+  const customerName = order.user?.name ?? order.address?.fullName ?? 'Guest'
   const customerPhone = order.user?.phone ?? order.guestPhone ?? order.address?.phone
   const customerEmail = order.user?.email ?? order.guestEmail
 
@@ -95,11 +100,17 @@ export default function OrderDetailPage({
                 <tbody>
                   {order.items.map((item) => (
                     <tr key={item.id}>
-                      <td className="font-medium text-ink">{item.product?.nameEn ?? '—'}</td>
+                      <td className="font-medium text-ink">
+                        {item.product?.nameEn ?? item.name ?? '—'}
+                      </td>
                       <td className="text-ink-2">
-                        <span className="font-mono text-[11px]">{item.variant?.sku}</span>
+                        <span className="font-mono text-[11px]">{item.variant?.sku ?? '—'}</span>
                         <p className="text-[11px] text-ink-3">
-                          {[item.variant?.tier, item.variant?.size, item.variant?.color]
+                          {[
+                            item.variant?.tier ?? item.tier,
+                            item.variant?.size ?? item.size,
+                            item.variant?.color ?? item.color,
+                          ]
                             .filter(Boolean)
                             .join(' · ')}
                         </p>
@@ -107,7 +118,8 @@ export default function OrderDetailPage({
                       <td className="text-right tabular-nums">{formatPrice(item.price)}</td>
                       <td className="text-right tabular-nums">{item.quantity}</td>
                       <td className="text-right font-semibold tabular-nums">
-                        {formatPrice(item.total)}
+                        {/* No `total` column — a line total is unit price × quantity. */}
+                        {formatPrice(item.price * item.quantity)}
                       </td>
                     </tr>
                   ))}
@@ -185,6 +197,13 @@ export default function OrderDetailPage({
           </Panel>
 
           <Panel>
+            <PanelHeader title="Payment" />
+            <div className="panel-pad">
+              <PaymentStatusControl orderId={order.id} current={order.paymentStatus} />
+            </div>
+          </Panel>
+
+          <Panel>
             <PanelHeader title="Customer" />
             <div className="panel-pad space-y-3 text-sm">
               <div className="flex gap-2.5">
@@ -203,8 +222,14 @@ export default function OrderDetailPage({
                 <div className="flex gap-2.5 pt-3 border-t border-line">
                   <MapPin className="h-4 w-4 text-ink-3 shrink-0 mt-0.5" aria-hidden />
                   <address className="not-italic text-ink-2 leading-relaxed">
-                    {order.address.line1}
-                    {order.address.line2 && <>, {order.address.line2}</>}
+                    {order.address.fullName && (
+                      <>
+                        <span className="text-ink font-medium">{order.address.fullName}</span>
+                        <br />
+                      </>
+                    )}
+                    {order.address.addressLine1}
+                    {order.address.addressLine2 && <>, {order.address.addressLine2}</>}
                     <br />
                     {order.address.city}
                     {order.address.province && <>, {order.address.province}</>}
@@ -217,12 +242,14 @@ export default function OrderDetailPage({
 
           <Panel>
             <PanelHeader title="Fulfilment" />
-            <div className="panel-pad space-y-2 text-sm">
+            <div className="panel-pad space-y-3 text-sm">
               <Row label="Payment method" value={titleCase(order.paymentMethod)} />
               <Row label="Shipping method" value={titleCase(order.shippingMethod)} />
-              <Row label="Tracking" value={order.trackingNumber || 'Not assigned'} />
+              <div className="pt-3 border-t border-line">
+                <TrackingEditor orderId={order.id} current={order.trackingNumber ?? ''} />
+              </div>
               {order.notes && (
-                <div className="pt-2 border-t border-line">
+                <div className="pt-3 border-t border-line">
                   <p className="text-xs font-semibold text-ink-2 mb-1">Customer note</p>
                   <p className="text-ink-3">{order.notes}</p>
                 </div>
@@ -254,6 +281,99 @@ function Row({
       >
         {value}
       </span>
+    </div>
+  )
+}
+
+/** Assign or update the courier tracking number. */
+function TrackingEditor({ orderId, current }: { orderId: string; current: string }) {
+  const { toast } = useToast()
+  const setTracking = useSetTracking()
+  const [value, setValue] = useState(current)
+
+  async function save() {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      toast('Enter a tracking number first.', 'error')
+      return
+    }
+    try {
+      await setTracking.mutateAsync({ id: orderId, trackingNumber: trimmed })
+      toast('Tracking number saved.')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not save tracking.', 'error')
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Truck className="h-4 w-4 text-ink-3 shrink-0" aria-hidden />
+      <Input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="Courier tracking number"
+        aria-label="Tracking number"
+      />
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={save}
+        loading={setTracking.isPending}
+        disabled={value.trim() === current.trim()}
+      >
+        Save
+      </Button>
+    </div>
+  )
+}
+
+/** Move the payment status by hand — how a COD order becomes paid on collection. */
+function PaymentStatusControl({ orderId, current }: { orderId: string; current: PaymentStatus }) {
+  const { toast } = useToast()
+  const setPayment = useSetPaymentStatus()
+  const [next, setNext] = useState<PaymentStatus | ''>('')
+
+  async function apply() {
+    if (!next || next === current) return
+    try {
+      await setPayment.mutateAsync({ id: orderId, paymentStatus: next })
+      toast(`Payment marked ${titleCase(next)}.`)
+      setNext('')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not update payment.', 'error')
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-sm">
+        <CreditCard className="h-4 w-4 text-ink-3 shrink-0" aria-hidden />
+        <span className="text-ink-3">Current</span>
+        <Badge className={paymentStatusClasses(current)}>{titleCase(current)}</Badge>
+      </div>
+      <FormField label="Change to" htmlFor="payment-status">
+        <Select
+          id="payment-status"
+          value={next}
+          onChange={(e) => setNext(e.target.value as PaymentStatus)}
+        >
+          <option value="">Select…</option>
+          {PAYMENT_STATUSES.filter((s) => s !== current).map((s) => (
+            <option key={s} value={s}>
+              {titleCase(s)}
+            </option>
+          ))}
+        </Select>
+      </FormField>
+      <Button
+        className="w-full"
+        size="sm"
+        onClick={apply}
+        disabled={!next}
+        loading={setPayment.isPending}
+      >
+        Update payment
+      </Button>
     </div>
   )
 }

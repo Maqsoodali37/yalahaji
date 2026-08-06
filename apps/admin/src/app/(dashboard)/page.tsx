@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Package,
   ArrowRight,
+  RefreshCcw,
 } from 'lucide-react'
 import { useOrders, useOrderStats } from '@/hooks/use-orders'
 import { useCatalogueStats, useLowStock } from '@/hooks/use-products'
@@ -89,6 +90,21 @@ export default function DashboardPage() {
             loading={stats.isLoading}
           />
         )}
+        <StatCard
+          label="Today's orders"
+          value={stats.data?.todayOrders ?? 0}
+          hint="Placed since midnight"
+          icon={ShoppingCart}
+          loading={stats.isLoading}
+        />
+        <StatCard
+          label="Refund rate"
+          value={`${((stats.data?.refundRate ?? 0) * 100).toFixed(1)}%`}
+          hint={`${stats.data?.refundedOrders ?? 0} refunded all time`}
+          icon={RefreshCcw}
+          tone={(stats.data?.refundRate ?? 0) > 0.1 ? 'warn' : 'default'}
+          loading={stats.isLoading}
+        />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-3">

@@ -177,7 +177,10 @@ Throttled at 5/minute. POST rather than GET so the number stays out of URLs, bro
 The number format is validated in two mirrored places — `ORDER_NUMBER_REGEX` in `apps/api/src/orders/dto/track-order.dto.ts` and in `apps/storefront/src/lib/validation.ts`. The alphabet is Crockford Base32, so `I`, `L`, `O` and `U` are deliberately absent.
 
 ### Returns
-Customer-facing half complete: eligible orders, request creation, own-request listing. 7-day window from the recorded delivery timeline entry. Admin moderation queue is pending.
+Customer-facing half: eligible orders, request creation, own-request listing. 7-day window from the recorded delivery timeline entry. Admin moderation is built — `PATCH /returns/admin/:id/status` with a server-enforced transition flow (`RETURN_STATUS_FLOW`: requested → approved/rejected → received → refunded), plus the admin queue screen with a status filter.
+
+### Admin order management
+The admin order screen supports server-side filtering (status, payment status, payment/shipping method, date range, total range, city/province, and a search across number, tracking, name, email and phone), allowlisted sorting, a bounded CSV export of the current view (`GET /orders/admin/export`), and bulk status change (`POST /orders/admin/bulk-status`, which skips orders whose current status cannot legally move). Tracking numbers are assigned via `PATCH /orders/:id/tracking`; payment status is moved by hand via `PATCH /orders/:id/payment-status` (how a COD order becomes `paid` on collection, since no gateway callback exists). The admin and API money/type/status shapes are mirrors — the `OrderStatus`, `ShippingMethod` and address field names in `apps/admin` must match the Prisma schema exactly, a drift that previously shipped a blank shipping block and an unreachable status.
 
 ### Reviews
 Submission requires a signed-in customer; reviews appear publicly only after moderation. Admin queue endpoint is pending.
@@ -224,6 +227,7 @@ Sign-out clears the in-memory list — otherwise one customer's saved items show
 - The same variant cannot appear twice — each line passes the per-line stock check while together exceeding stock.
 - `min_order_amount` checked against the discounted subtotal. `0` means no minimum.
 - Cancellable by the customer only while `pending` or `confirmed`.
+- **Status transitions are enforced server-side** by `ORDER_STATUS_FLOW` in `orders.service.ts`, not only narrowed in the admin dropdown. The forward path is pending → confirmed → processing → packed → shipped → out_for_delivery → delivered; `cancelled` is reachable up to and including `packed`; `delivered → refunded` is the only move out of delivered. `cancelled` and `refunded` are terminal. The admin's `nextStatuses` mirrors this map — change one, change both.
 
 ### Payments
 **Cash on Delivery is the only selectable method.** JazzCash, Easypaisa and card are shown greyed out as *Coming Soon* — no gateway exists, and offering them produced orders that looked paid to the customer and unpaid to fulfilment. **Bank transfer is not supported and not planned.**
@@ -401,6 +405,9 @@ Three surfaces previously decided independently and disagreed. Anything showing 
 The alternative — number plus the email or phone the order was placed with — was one field more for the customer and needed no schema change. It was rejected because the number is the thing people actually keep; the contact detail is the thing they guess wrong, especially when a relative placed the order. Moving the secret into the number keeps the lookup to a single field without making it enumerable.
 
 The cost is a migration that rewrote every historical order number, and a number that is longer to read aloud.
+
+### There is no `returned` order status; `refunded` is terminal
+The admin once carried a `returned` value in its `OrderStatus` union that the Prisma enum never had, so choosing it produced a 400 from the status endpoint. Rather than add the enum value, a physical return is modelled where it belongs — the `Return` record and its own `ReturnStatus` lifecycle — and the order moves to `refunded` when a refund is issued. Keeping return state out of `OrderStatus` avoids conflating "the parcel came back" with "money went out", which are separate events with separate approvals.
 
 ### The wishlist requires an account
 Considered keeping it device-local for guests and syncing on sign-in. Rejected: a wishlist that silently disappears when someone clears their browser or picks up a different phone is worse than one that asks for an account first, and the "saved" state was a promise the local version could not keep.

@@ -1,7 +1,9 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, ParseUUIDPipe } from '@nestjs/common'
+import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards, ParseUUIDPipe } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth, ApiCookieAuth, ApiOperation } from '@nestjs/swagger'
+import { ReturnStatus } from '@prisma/client'
 import { ReturnsService } from './returns.service'
 import { CreateReturnDto } from './dto/create-return.dto'
+import { UpdateReturnStatusDto } from './dto/update-return-status.dto'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard'
 import { RolesGuard } from '../auth/roles.guard'
@@ -38,8 +40,21 @@ export class ReturnsController {
   @Roles(...STAFF_ORDERS)
   @ApiCookieAuth()
   @ApiOperation({ summary: 'Admin: return queue' })
-  findAll(@Query('page') page = '1', @Query('limit') limit = '20') {
-    return this.returnsService.findAll(+page || 1, +limit || 20)
+  findAll(
+    @Query('page') page = '1',
+    @Query('limit') limit = '20',
+    @Query('status') status?: ReturnStatus,
+  ) {
+    return this.returnsService.findAll(+page || 1, +limit || 20, status)
+  }
+
+  @Patch('admin/:id/status')
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles(...STAFF_ORDERS)
+  @ApiCookieAuth()
+  @ApiOperation({ summary: 'Admin: approve / reject / receive / refund a return' })
+  updateStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateReturnStatusDto) {
+    return this.returnsService.updateStatus(id, dto.status, dto.note)
   }
 
   @Post()

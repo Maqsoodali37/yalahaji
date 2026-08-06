@@ -7,6 +7,9 @@ export type Role = 'customer' | 'admin' | 'manager' | 'support' | 'fulfillment'
 
 export type Tier = 'Economy' | 'Standard' | 'Premium'
 
+// Mirrors the Prisma `OrderStatus` enum exactly. `refunded` is the terminal
+// state; there is no `returned` order status — a physical return lives in the
+// Return model, and the order moves to `refunded` when its refund is issued.
 export type OrderStatus =
   | 'pending'
   | 'confirmed'
@@ -16,13 +19,16 @@ export type OrderStatus =
   | 'out_for_delivery'
   | 'delivered'
   | 'cancelled'
-  | 'returned'
+  | 'refunded'
 
 export type PaymentMethod = 'cod' | 'jazzcash' | 'easypaisa' | 'bank_transfer' | 'card'
 
 export type PaymentStatus = 'unpaid' | 'paid' | 'partially_refunded' | 'refunded'
 
-export type ShippingMethod = 'standard' | 'express' | 'pickup'
+// Mirrors the Prisma `ShippingMethod` enum: standard | express | cod.
+export type ShippingMethod = 'standard' | 'express' | 'cod'
+
+export type ReturnStatus = 'requested' | 'approved' | 'rejected' | 'received' | 'refunded'
 
 /**
  * Staff profile returned by /auth/admin/login and /auth/admin/me.
@@ -170,15 +176,29 @@ export interface ProductInput {
   images?: MediaInput[]
 }
 
+/**
+ * A line as the API returns it. The money fields the row carries are `price`
+ * (unit, paisas) and `quantity` — there is **no** `total` column, so a line
+ * total is `price × quantity`, computed at the display edge. `name`/`image`
+ * are snapshots taken at checkout, so a line still renders after the product
+ * is renamed or deleted; `product`/`variant` are live joins and may be absent.
+ */
 export interface OrderItem {
   id: string
   productId: string
   variantId: string
-  quantity: number
+  name: string
+  image?: string | null
+  tier: Tier
+  size?: string | null
+  color?: string | null
+  scent?: string | null
   price: number
-  total: number
-  product: { slug: string; nameEn: string }
-  variant: ProductVariant
+  quantity: number
+  hasGiftWrap?: boolean
+  giftMessage?: string | null
+  product?: { slug: string; nameEn: string } | null
+  variant?: ProductVariant | null
 }
 
 export interface OrderTimelineEntry {
@@ -188,12 +208,19 @@ export interface OrderTimelineEntry {
   createdAt: string
 }
 
+/**
+ * The address exactly as the API returns it (the raw Prisma `Address`). The
+ * field names are `fullName`/`addressLine1`/`addressLine2` — NOT
+ * `name`/`line1`/`line2`. Getting these wrong renders a blank shipping block,
+ * which is precisely the bug this type once caused.
+ */
 export interface OrderAddress {
   id: string
-  name: string
+  label?: string
+  fullName: string
   phone: string
-  line1: string
-  line2?: string | null
+  addressLine1: string
+  addressLine2?: string | null
   city: string
   province?: string | null
   postalCode?: string | null
@@ -232,7 +259,38 @@ export interface OrderStats {
   recentOrders: number
   recentRevenue: number
   averageOrderValue: number
+  todayOrders: number
+  refundedOrders: number
+  /** Fraction 0–1; format as a percentage for display. */
+  refundRate: number
   byStatus: { status: OrderStatus; count: number }[]
+}
+
+export interface ReturnOrderItem {
+  id: string
+  name: string
+  quantity: number
+  price: number
+  image?: string | null
+}
+
+/** A return request as the admin queue receives it. */
+export interface ReturnRequest {
+  id: string
+  reason: string
+  status: ReturnStatus
+  note?: string | null
+  images?: string | null
+  createdAt: string
+  updatedAt: string
+  order: {
+    id: string
+    number: string
+    total: number
+    status: OrderStatus
+    createdAt: string
+    items: ReturnOrderItem[]
+  }
 }
 
 export interface CatalogueStats {

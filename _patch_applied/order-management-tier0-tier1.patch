@@ -1,0 +1,2219 @@
+diff --git a/PROJECT_SPEC.md b/PROJECT_SPEC.md
+index 40c4195..8a7a8b1 100644
+--- a/PROJECT_SPEC.md
++++ b/PROJECT_SPEC.md
+@@ -177,7 +177,10 @@ Throttled at 5/minute. POST rather than GET so the number stays out of URLs, bro
+ The number format is validated in two mirrored places — `ORDER_NUMBER_REGEX` in `apps/api/src/orders/dto/track-order.dto.ts` and in `apps/storefront/src/lib/validation.ts`. The alphabet is Crockford Base32, so `I`, `L`, `O` and `U` are deliberately absent.
+ 
+ ### Returns
+-Customer-facing half complete: eligible orders, request creation, own-request listing. 7-day window from the recorded delivery timeline entry. Admin moderation queue is pending.
++Customer-facing half: eligible orders, request creation, own-request listing. 7-day window from the recorded delivery timeline entry. Admin moderation is built — `PATCH /returns/admin/:id/status` with a server-enforced transition flow (`RETURN_STATUS_FLOW`: requested → approved/rejected → received → refunded), plus the admin queue screen with a status filter.
++
++### Admin order management
++The admin order screen supports server-side filtering (status, payment status, payment/shipping method, date range, total range, city/province, and a search across number, tracking, name, email and phone), allowlisted sorting, a bounded CSV export of the current view (`GET /orders/admin/export`), and bulk status change (`POST /orders/admin/bulk-status`, which skips orders whose current status cannot legally move). Tracking numbers are assigned via `PATCH /orders/:id/tracking`; payment status is moved by hand via `PATCH /orders/:id/payment-status` (how a COD order becomes `paid` on collection, since no gateway callback exists). The admin and API money/type/status shapes are mirrors — the `OrderStatus`, `ShippingMethod` and address field names in `apps/admin` must match the Prisma schema exactly, a drift that previously shipped a blank shipping block and an unreachable status.
+ 
+ ### Reviews
+ Submission requires a signed-in customer; reviews appear publicly only after moderation. Admin queue endpoint is pending.
+@@ -224,6 +227,7 @@ Sign-out clears the in-memory list — otherwise one customer's saved items show
+ - The same variant cannot appear twice — each line passes the per-line stock check while together exceeding stock.
+ - `min_order_amount` checked against the discounted subtotal. `0` means no minimum.
+ - Cancellable by the customer only while `pending` or `confirmed`.
++- **Status transitions are enforced server-side** by `ORDER_STATUS_FLOW` in `orders.service.ts`, not only narrowed in the admin dropdown. The forward path is pending → confirmed → processing → packed → shipped → out_for_delivery → delivered; `cancelled` is reachable up to and including `packed`; `delivered → refunded` is the only move out of delivered. `cancelled` and `refunded` are terminal. The admin's `nextStatuses` mirrors this map — change one, change both.
+ 
+ ### Payments
+ **Cash on Delivery is the only selectable method.** JazzCash, Easypaisa and card are shown greyed out as *Coming Soon* — no gateway exists, and offering them produced orders that looked paid to the customer and unpaid to fulfilment. **Bank transfer is not supported and not planned.**
+@@ -402,6 +406,9 @@ The alternative — number plus the email or phone the order was placed with —
+ 
+ The cost is a migration that rewrote every historical order number, and a number that is longer to read aloud.
+ 
++### There is no `returned` order status; `refunded` is terminal
++The admin once carried a `returned` value in its `OrderStatus` union that the Prisma enum never had, so choosing it produced a 400 from the status endpoint. Rather than add the enum value, a physical return is modelled where it belongs — the `Return` record and its own `ReturnStatus` lifecycle — and the order moves to `refunded` when a refund is issued. Keeping return state out of `OrderStatus` avoids conflating "the parcel came back" with "money went out", which are separate events with separate approvals.
++
+ ### The wishlist requires an account
+ Considered keeping it device-local for guests and syncing on sign-in. Rejected: a wishlist that silently disappears when someone clears their browser or picks up a different phone is worse than one that asks for an account first, and the "saved" state was a promise the local version could not keep.
+ 
+diff --git a/TASKS.md b/TASKS.md
+index ed47158..c458110 100644
+--- a/TASKS.md
++++ b/TASKS.md
+@@ -59,10 +59,6 @@ Backends already exist for blog, categories, coupons and customers — those fou
+ 
+ Needs a new `GET /reviews/admin` endpoint — only `findByProduct` exists today, so there is no way to see the pending queue across all products. Then build the admin screen (approve / reject / bulk approve / filter by rating).
+ 
+-### Returns moderation queue
+-
+-`GET /returns/admin` exists. Missing: a status-transition endpoint (approve / reject / received / refunded) and the admin UI. The customer-facing half is done.
+-
+ ### Kit-category admin CRUD screens
+ 
+ The API is complete and guarded (`/kit-categories` + admin CRUD). Nothing in the admin panel consumes it, so kit builder steps can only be changed via the seed.
+@@ -94,3 +90,18 @@ Revenue and order trends over a date range, best/worst sellers, customer lifetim
+ ### Testimonials API
+ 
+ `components/home/testimonials-section.tsx` reads static content from `src/data/testimonials.ts`. Deliberately static for now — curated marketing copy with no admin surface. Only build this if marketing needs to edit it without a deploy.
++
++### Order management — enterprise OMS (phased, needs schema)
++
++The admin order screen now covers listing filters/sort/export, bulk status, tracking assignment, payment-status changes and returns moderation (all on the current schema). The remaining "enterprise OMS" scope is net-new and each item needs migrations and/or integrations. Do these in order; the audit's phased plan has the detail.
++
++- **Audit log** (`AuditLog` model: actor, action, entity, before/after JSON, IP, at) wired into every order/return/payment mutation. Foundational — do first. `OrderTimeline` currently records payment/status changes with no actor.
++- Internal vs customer notes (`OrderNote` model, `@mention`), replacing the single `Order.notes`.
++- Fulfilment status + assigned staff (`Order.fulfilmentStatus`, `Order.assignedStaffId`).
++- Shipment model (courier, label, history, delivery estimate); item-level edit/refund/replace.
++- Customer rollups (previous orders, total spend, AOV, LTV, tags, loyalty tier).
++- Document generation (invoice / packing slip / label / credit note / return slip PDF).
++- Communication engine (email/SMS/WhatsApp + templates), and a granular per-action RBAC (`refund` / `cancel` / `export` / `view costs` / `view profit`) once cost/profit data exists.
++- Risk level / source / sales channel / currency / invoice-number columns.
++
++Out of scope by recorded decision unless the business changes it: payment capture/void/gateway (COD-only), widening the public tracking payload.
+diff --git a/apps/admin/src/app/(dashboard)/orders/[id]/page.tsx b/apps/admin/src/app/(dashboard)/orders/[id]/page.tsx
+index c5d6d89..3642dc1 100644
+--- a/apps/admin/src/app/(dashboard)/orders/[id]/page.tsx
++++ b/apps/admin/src/app/(dashboard)/orders/[id]/page.tsx
+@@ -1,19 +1,23 @@
+ 'use client'
+ 
+-import { use } from 'react'
++import { use, useState } from 'react'
+ import Link from 'next/link'
+-import { ArrowLeft, MapPin, User, Printer } from 'lucide-react'
+-import { useOrder } from '@/hooks/use-orders'
++import { ArrowLeft, MapPin, User, Printer, Truck, CreditCard } from 'lucide-react'
++import { useOrder, useSetTracking, useSetPaymentStatus } from '@/hooks/use-orders'
+ import { StatusUpdater } from '@/components/orders/status-updater'
+ import { Panel, PanelHeader, PageHeader, Badge, ErrorState, Skeleton } from '@/components/ui/panel'
+ import { Button } from '@/components/ui/button'
++import { Input, Select, FormField } from '@/components/ui/field'
++import { useToast } from '@/components/ui/toast'
+ import {
+   formatPrice,
+   formatDateTime,
+   statusClasses,
+   paymentStatusClasses,
+   titleCase,
++  PAYMENT_STATUSES,
+ } from '@/lib/utils'
++import type { PaymentStatus } from '@/types'
+ 
+ export default function OrderDetailPage({
+   params,
+@@ -44,7 +48,8 @@ export default function OrderDetailPage({
+     )
+   }
+ 
+-  const customerName = order.user?.name ?? order.address?.name ?? 'Guest'
++  // The API returns the raw Prisma Address: fullName / addressLine1 / addressLine2.
++  const customerName = order.user?.name ?? order.address?.fullName ?? 'Guest'
+   const customerPhone = order.user?.phone ?? order.guestPhone ?? order.address?.phone
+   const customerEmail = order.user?.email ?? order.guestEmail
+ 
+@@ -95,11 +100,17 @@ export default function OrderDetailPage({
+                 <tbody>
+                   {order.items.map((item) => (
+                     <tr key={item.id}>
+-                      <td className="font-medium text-ink">{item.product?.nameEn ?? '—'}</td>
++                      <td className="font-medium text-ink">
++                        {item.product?.nameEn ?? item.name ?? '—'}
++                      </td>
+                       <td className="text-ink-2">
+-                        <span className="font-mono text-[11px]">{item.variant?.sku}</span>
++                        <span className="font-mono text-[11px]">{item.variant?.sku ?? '—'}</span>
+                         <p className="text-[11px] text-ink-3">
+-                          {[item.variant?.tier, item.variant?.size, item.variant?.color]
++                          {[
++                            item.variant?.tier ?? item.tier,
++                            item.variant?.size ?? item.size,
++                            item.variant?.color ?? item.color,
++                          ]
+                             .filter(Boolean)
+                             .join(' · ')}
+                         </p>
+@@ -107,7 +118,8 @@ export default function OrderDetailPage({
+                       <td className="text-right tabular-nums">{formatPrice(item.price)}</td>
+                       <td className="text-right tabular-nums">{item.quantity}</td>
+                       <td className="text-right font-semibold tabular-nums">
+-                        {formatPrice(item.total)}
++                        {/* No `total` column — a line total is unit price × quantity. */}
++                        {formatPrice(item.price * item.quantity)}
+                       </td>
+                     </tr>
+                   ))}
+@@ -184,6 +196,13 @@ export default function OrderDetailPage({
+             </div>
+           </Panel>
+ 
++          <Panel>
++            <PanelHeader title="Payment" />
++            <div className="panel-pad">
++              <PaymentStatusControl orderId={order.id} current={order.paymentStatus} />
++            </div>
++          </Panel>
++
+           <Panel>
+             <PanelHeader title="Customer" />
+             <div className="panel-pad space-y-3 text-sm">
+@@ -203,8 +222,14 @@ export default function OrderDetailPage({
+                 <div className="flex gap-2.5 pt-3 border-t border-line">
+                   <MapPin className="h-4 w-4 text-ink-3 shrink-0 mt-0.5" aria-hidden />
+                   <address className="not-italic text-ink-2 leading-relaxed">
+-                    {order.address.line1}
+-                    {order.address.line2 && <>, {order.address.line2}</>}
++                    {order.address.fullName && (
++                      <>
++                        <span className="text-ink font-medium">{order.address.fullName}</span>
++                        <br />
++                      </>
++                    )}
++                    {order.address.addressLine1}
++                    {order.address.addressLine2 && <>, {order.address.addressLine2}</>}
+                     <br />
+                     {order.address.city}
+                     {order.address.province && <>, {order.address.province}</>}
+@@ -217,12 +242,14 @@ export default function OrderDetailPage({
+ 
+           <Panel>
+             <PanelHeader title="Fulfilment" />
+-            <div className="panel-pad space-y-2 text-sm">
++            <div className="panel-pad space-y-3 text-sm">
+               <Row label="Payment method" value={titleCase(order.paymentMethod)} />
+               <Row label="Shipping method" value={titleCase(order.shippingMethod)} />
+-              <Row label="Tracking" value={order.trackingNumber || 'Not assigned'} />
++              <div className="pt-3 border-t border-line">
++                <TrackingEditor orderId={order.id} current={order.trackingNumber ?? ''} />
++              </div>
+               {order.notes && (
+-                <div className="pt-2 border-t border-line">
++                <div className="pt-3 border-t border-line">
+                   <p className="text-xs font-semibold text-ink-2 mb-1">Customer note</p>
+                   <p className="text-ink-3">{order.notes}</p>
+                 </div>
+@@ -257,3 +284,96 @@ function Row({
+     </div>
+   )
+ }
++
++/** Assign or update the courier tracking number. */
++function TrackingEditor({ orderId, current }: { orderId: string; current: string }) {
++  const { toast } = useToast()
++  const setTracking = useSetTracking()
++  const [value, setValue] = useState(current)
++
++  async function save() {
++    const trimmed = value.trim()
++    if (!trimmed) {
++      toast('Enter a tracking number first.', 'error')
++      return
++    }
++    try {
++      await setTracking.mutateAsync({ id: orderId, trackingNumber: trimmed })
++      toast('Tracking number saved.')
++    } catch (err) {
++      toast(err instanceof Error ? err.message : 'Could not save tracking.', 'error')
++    }
++  }
++
++  return (
++    <div className="flex items-center gap-2">
++      <Truck className="h-4 w-4 text-ink-3 shrink-0" aria-hidden />
++      <Input
++        value={value}
++        onChange={(e) => setValue(e.target.value)}
++        placeholder="Courier tracking number"
++        aria-label="Tracking number"
++      />
++      <Button
++        size="sm"
++        variant="outline"
++        onClick={save}
++        loading={setTracking.isPending}
++        disabled={value.trim() === current.trim()}
++      >
++        Save
++      </Button>
++    </div>
++  )
++}
++
++/** Move the payment status by hand — how a COD order becomes paid on collection. */
++function PaymentStatusControl({ orderId, current }: { orderId: string; current: PaymentStatus }) {
++  const { toast } = useToast()
++  const setPayment = useSetPaymentStatus()
++  const [next, setNext] = useState<PaymentStatus | ''>('')
++
++  async function apply() {
++    if (!next || next === current) return
++    try {
++      await setPayment.mutateAsync({ id: orderId, paymentStatus: next })
++      toast(`Payment marked ${titleCase(next)}.`)
++      setNext('')
++    } catch (err) {
++      toast(err instanceof Error ? err.message : 'Could not update payment.', 'error')
++    }
++  }
++
++  return (
++    <div className="space-y-3">
++      <div className="flex items-center gap-2 text-sm">
++        <CreditCard className="h-4 w-4 text-ink-3 shrink-0" aria-hidden />
++        <span className="text-ink-3">Current</span>
++        <Badge className={paymentStatusClasses(current)}>{titleCase(current)}</Badge>
++      </div>
++      <FormField label="Change to" htmlFor="payment-status">
++        <Select
++          id="payment-status"
++          value={next}
++          onChange={(e) => setNext(e.target.value as PaymentStatus)}
++        >
++          <option value="">Select…</option>
++          {PAYMENT_STATUSES.filter((s) => s !== current).map((s) => (
++            <option key={s} value={s}>
++              {titleCase(s)}
++            </option>
++          ))}
++        </Select>
++      </FormField>
++      <Button
++        className="w-full"
++        size="sm"
++        onClick={apply}
++        disabled={!next}
++        loading={setPayment.isPending}
++      >
++        Update payment
++      </Button>
++    </div>
++  )
++}
+diff --git a/apps/admin/src/app/(dashboard)/orders/page.tsx b/apps/admin/src/app/(dashboard)/orders/page.tsx
+index 726b2c2..2523dcb 100644
+--- a/apps/admin/src/app/(dashboard)/orders/page.tsx
++++ b/apps/admin/src/app/(dashboard)/orders/page.tsx
+@@ -1,152 +1,388 @@
+ 'use client'
+ 
+-import { useEffect, useState } from 'react'
++import { useEffect, useMemo, useState } from 'react'
+ import Link from 'next/link'
+-import { Search, ShoppingCart, ChevronRight } from 'lucide-react'
+-import { useOrders, type OrderFilters } from '@/hooks/use-orders'
++import { Search, ShoppingCart, ChevronRight, Download, ArrowUp, ArrowDown, X } from 'lucide-react'
++import {
++  useOrders,
++  useBulkStatus,
++  exportOrdersCsv,
++  type OrderFilters,
++} from '@/hooks/use-orders'
+ import { useDebouncedValue } from '@/hooks/use-debounced-value'
+ import { Panel, PageHeader, Badge, EmptyState, TableSkeleton, ErrorState } from '@/components/ui/panel'
+ import { Input, Select } from '@/components/ui/field'
++import { Button } from '@/components/ui/button'
+ import { Pagination } from '@/components/ui/pagination'
++import { useToast } from '@/components/ui/toast'
+ import {
+   ORDER_STATUSES,
++  PAYMENT_STATUSES,
++  PAYMENT_METHODS,
++  SHIPPING_METHODS,
+   formatPrice,
+   relativeTime,
+   statusClasses,
+   paymentStatusClasses,
+   titleCase,
++  rupeesToPaisas,
+ } from '@/lib/utils'
+-import type { OrderStatus } from '@/types'
++import type { OrderStatus, PaymentStatus, PaymentMethod, ShippingMethod } from '@/types'
+ 
+ const LIMIT = 20
+ 
++type SortField = 'total' | 'createdAt'
++
+ export default function OrdersPage() {
++  const { toast } = useToast()
++
++  // Filters
+   const [search, setSearch] = useState('')
+   const [status, setStatus] = useState<OrderStatus | ''>('')
++  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus | ''>('')
++  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>('')
++  const [shippingMethod, setShippingMethod] = useState<ShippingMethod | ''>('')
++  const [dateFrom, setDateFrom] = useState('')
++  const [dateTo, setDateTo] = useState('')
++  const [minRupees, setMinRupees] = useState('')
++  const [maxRupees, setMaxRupees] = useState('')
++
++  // Sorting + paging + selection
++  const [sort, setSort] = useState<SortField | ''>('')
++  const [order, setOrder] = useState<'asc' | 'desc'>('desc')
+   const [page, setPage] = useState(1)
++  const [selected, setSelected] = useState<Set<string>>(new Set())
++  const [bulkStatus, setBulkStatus] = useState<OrderStatus | ''>('')
++  const [exporting, setExporting] = useState(false)
+ 
+   const debounced = useDebouncedValue(search)
+ 
++  // Any filter change resets to page one and clears a stale selection — the
++  // ids in `selected` belong to the page that was showing when they were ticked.
+   useEffect(() => {
+     setPage(1)
+-  }, [debounced, status])
++    setSelected(new Set())
++  }, [
++    debounced, status, paymentStatus, paymentMethod, shippingMethod,
++    dateFrom, dateTo, minRupees, maxRupees, sort, order,
++  ])
+ 
+   const filters: OrderFilters = {
+     search: debounced || undefined,
+     status: status || undefined,
++    paymentStatus: paymentStatus || undefined,
++    paymentMethod: paymentMethod || undefined,
++    shippingMethod: shippingMethod || undefined,
++    dateFrom: dateFrom || undefined,
++    dateTo: dateTo || undefined,
++    minTotal: minRupees ? rupeesToPaisas(Number(minRupees)) : undefined,
++    maxTotal: maxRupees ? rupeesToPaisas(Number(maxRupees)) : undefined,
++    sort: sort || undefined,
++    order: sort ? order : undefined,
+     page,
+     limit: LIMIT,
+   }
+ 
+   const { data, isLoading, isError, error, refetch } = useOrders(filters)
++  const bulk = useBulkStatus()
++
++  const rows = data?.items ?? []
++  const allSelected = rows.length > 0 && rows.every((o) => selected.has(o.id))
++  const hasFilters =
++    !!debounced || !!status || !!paymentStatus || !!paymentMethod || !!shippingMethod ||
++    !!dateFrom || !!dateTo || !!minRupees || !!maxRupees
++
++  function toggleSort(field: SortField) {
++    if (sort === field) {
++      setOrder((o) => (o === 'asc' ? 'desc' : 'asc'))
++    } else {
++      setSort(field)
++      setOrder('desc')
++    }
++  }
++
++  function toggleRow(id: string) {
++    setSelected((prev) => {
++      const next = new Set(prev)
++      next.has(id) ? next.delete(id) : next.add(id)
++      return next
++    })
++  }
++
++  function toggleAll() {
++    setSelected((prev) => {
++      if (rows.every((o) => prev.has(o.id))) {
++        const next = new Set(prev)
++        rows.forEach((o) => next.delete(o.id))
++        return next
++      }
++      const next = new Set(prev)
++      rows.forEach((o) => next.add(o.id))
++      return next
++    })
++  }
++
++  async function applyBulk() {
++    if (!bulkStatus || selected.size === 0) return
++    try {
++      const res = await bulk.mutateAsync({ ids: [...selected], status: bulkStatus })
++      const parts = [`${res.updated} updated`]
++      if (res.skipped) parts.push(`${res.skipped} skipped (not a legal move)`)
++      if (res.notFound) parts.push(`${res.notFound} not found`)
++      toast(parts.join(' · '))
++      setSelected(new Set())
++      setBulkStatus('')
++    } catch (err) {
++      toast(err instanceof Error ? err.message : 'Bulk update failed.', 'error')
++    }
++  }
++
++  async function handleExport() {
++    setExporting(true)
++    try {
++      await exportOrdersCsv(filters)
++    } catch (err) {
++      toast(err instanceof Error ? err.message : 'Export failed.', 'error')
++    } finally {
++      setExporting(false)
++    }
++  }
+ 
+   return (
+     <>
+       <PageHeader
+         title="Orders"
+         description="Track, filter and progress customer orders."
++        action={
++          <Button variant="outline" size="sm" onClick={handleExport} loading={exporting}>
++            <Download className="h-3.5 w-3.5" />
++            Export CSV
++          </Button>
++        }
+       />
+ 
+       <Panel className="overflow-hidden">
+         {/* ─── Filters ───────────────────────────────────── */}
+-        <div className="flex flex-wrap items-center gap-3 p-4 border-b border-line">
+-          <div className="relative flex-1 min-w-[220px]">
+-            <Search
+-              className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-3 pointer-events-none"
+-              aria-hidden
+-            />
+-            <Input
+-              className="pl-9"
+-              placeholder="Search by order number, name or phone…"
+-              value={search}
+-              onChange={(e) => setSearch(e.target.value)}
+-              aria-label="Search orders"
+-            />
++        <div className="p-4 border-b border-line space-y-3">
++          <div className="flex flex-wrap items-center gap-3">
++            <div className="relative flex-1 min-w-[220px]">
++              <Search
++                className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-3 pointer-events-none"
++                aria-hidden
++              />
++              <Input
++                className="pl-9"
++                placeholder="Search order #, tracking, name, email or phone…"
++                value={search}
++                onChange={(e) => setSearch(e.target.value)}
++                aria-label="Search orders"
++              />
++            </div>
++
++            <Select
++              className="w-auto min-w-[150px]"
++              value={status}
++              onChange={(e) => setStatus(e.target.value as OrderStatus | '')}
++              aria-label="Filter by status"
++            >
++              <option value="">All statuses</option>
++              {ORDER_STATUSES.map((s) => (
++                <option key={s} value={s}>{titleCase(s)}</option>
++              ))}
++            </Select>
++
++            <Select
++              className="w-auto min-w-[150px]"
++              value={paymentStatus}
++              onChange={(e) => setPaymentStatus(e.target.value as PaymentStatus | '')}
++              aria-label="Filter by payment status"
++            >
++              <option value="">All payments</option>
++              {PAYMENT_STATUSES.map((s) => (
++                <option key={s} value={s}>{titleCase(s)}</option>
++              ))}
++            </Select>
+           </div>
+ 
+-          <Select
+-            className="w-auto min-w-[170px]"
+-            value={status}
+-            onChange={(e) => setStatus(e.target.value as OrderStatus | '')}
+-            aria-label="Filter by status"
+-          >
+-            <option value="">All statuses</option>
+-            {ORDER_STATUSES.map((s) => (
+-              <option key={s} value={s}>
+-                {titleCase(s)}
+-              </option>
+-            ))}
+-          </Select>
++          <div className="flex flex-wrap items-center gap-3">
++            <Select
++              className="w-auto min-w-[150px]"
++              value={paymentMethod}
++              onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod | '')}
++              aria-label="Filter by payment method"
++            >
++              <option value="">Any method</option>
++              {PAYMENT_METHODS.map((s) => (
++                <option key={s} value={s}>{titleCase(s)}</option>
++              ))}
++            </Select>
++
++            <Select
++              className="w-auto min-w-[150px]"
++              value={shippingMethod}
++              onChange={(e) => setShippingMethod(e.target.value as ShippingMethod | '')}
++              aria-label="Filter by shipping method"
++            >
++              <option value="">Any shipping</option>
++              {SHIPPING_METHODS.map((s) => (
++                <option key={s} value={s}>{titleCase(s)}</option>
++              ))}
++            </Select>
++
++            <label className="flex items-center gap-1.5 text-xs text-ink-3">
++              From
++              <Input
++                type="date"
++                className="w-auto"
++                value={dateFrom}
++                onChange={(e) => setDateFrom(e.target.value)}
++                aria-label="From date"
++              />
++            </label>
++            <label className="flex items-center gap-1.5 text-xs text-ink-3">
++              To
++              <Input
++                type="date"
++                className="w-auto"
++                value={dateTo}
++                onChange={(e) => setDateTo(e.target.value)}
++                aria-label="To date"
++              />
++            </label>
++
++            <label className="flex items-center gap-1.5 text-xs text-ink-3">
++              ₨ min
++              <Input
++                type="number"
++                inputMode="numeric"
++                className="w-24"
++                value={minRupees}
++                onChange={(e) => setMinRupees(e.target.value)}
++                aria-label="Minimum total in rupees"
++              />
++            </label>
++            <label className="flex items-center gap-1.5 text-xs text-ink-3">
++              ₨ max
++              <Input
++                type="number"
++                inputMode="numeric"
++                className="w-24"
++                value={maxRupees}
++                onChange={(e) => setMaxRupees(e.target.value)}
++                aria-label="Maximum total in rupees"
++              />
++            </label>
++          </div>
+         </div>
+ 
++        {/* ─── Bulk action bar ───────────────────────────── */}
++        {selected.size > 0 && (
++          <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 bg-paper border-b border-line">
++            <span className="text-sm font-medium text-ink-2">{selected.size} selected</span>
++            <Select
++              className="w-auto min-w-[160px]"
++              value={bulkStatus}
++              onChange={(e) => setBulkStatus(e.target.value as OrderStatus | '')}
++              aria-label="Bulk status"
++            >
++              <option value="">Set status to…</option>
++              {ORDER_STATUSES.map((s) => (
++                <option key={s} value={s}>{titleCase(s)}</option>
++              ))}
++            </Select>
++            <Button size="sm" onClick={applyBulk} disabled={!bulkStatus} loading={bulk.isPending}>
++              Apply
++            </Button>
++            <button
++              type="button"
++              onClick={() => setSelected(new Set())}
++              className="inline-flex items-center gap-1 text-xs text-ink-3 hover:text-ink"
++            >
++              <X className="h-3.5 w-3.5" /> Clear
++            </button>
++          </div>
++        )}
++
+         {/* ─── Table ─────────────────────────────────────── */}
+         {isLoading ? (
+-          <TableSkeleton rows={8} cols={6} />
++          <TableSkeleton rows={8} cols={7} />
+         ) : isError ? (
+           <ErrorState
+             message={error instanceof Error ? error.message : 'Failed to load orders.'}
+             onRetry={() => void refetch()}
+           />
+-        ) : data && data.items.length > 0 ? (
++        ) : rows.length > 0 ? (
+           <>
+             <div className="table-wrap">
+               <table className="table">
+                 <thead>
+                   <tr>
++                    <th className="w-8">
++                      <input
++                        type="checkbox"
++                        checked={allSelected}
++                        onChange={toggleAll}
++                        aria-label="Select all on this page"
++                      />
++                    </th>
+                     <th>Order</th>
+                     <th>Customer</th>
+                     <th>Items</th>
+                     <th>Status</th>
+                     <th>Payment</th>
+-                    <th className="text-right">Total</th>
+-                    <th>Placed</th>
++                    <th className="text-right">
++                      <SortButton label="Total" active={sort === 'total'} order={order} onClick={() => toggleSort('total')} />
++                    </th>
++                    <th>
++                      <SortButton label="Placed" active={sort === 'createdAt'} order={order} onClick={() => toggleSort('createdAt')} />
++                    </th>
+                     <th />
+                   </tr>
+                 </thead>
+                 <tbody>
+-                  {data.items.map((order) => (
+-                    <tr key={order.id}>
++                  {rows.map((o) => (
++                    <tr key={o.id} className={selected.has(o.id) ? 'bg-green-tint/40' : undefined}>
++                      <td>
++                        <input
++                          type="checkbox"
++                          checked={selected.has(o.id)}
++                          onChange={() => toggleRow(o.id)}
++                          aria-label={`Select order ${o.number}`}
++                        />
++                      </td>
+                       <td>
+                         <Link
+-                          href={`/orders/${order.id}`}
++                          href={`/orders/${o.id}`}
+                           className="font-semibold text-green hover:underline font-mono text-xs"
+                         >
+-                          {order.number}
++                          {o.number}
+                         </Link>
+                       </td>
+                       <td>
+-                        <p className="text-ink font-medium">
+-                          {order.user?.name ?? 'Guest'}
+-                        </p>
++                        <p className="text-ink font-medium">{o.user?.name ?? 'Guest'}</p>
+                         <p className="text-[11px] text-ink-3">
+-                          {order.user?.phone ?? order.guestPhone ?? '—'}
++                          {o.user?.phone ?? o.guestPhone ?? '—'}
+                         </p>
+                       </td>
+-                      <td className="tabular-nums text-ink-2">{order.items.length}</td>
++                      <td className="tabular-nums text-ink-2">{o.items.length}</td>
+                       <td>
+-                        <Badge className={statusClasses(order.status)}>
+-                          {titleCase(order.status)}
+-                        </Badge>
++                        <Badge className={statusClasses(o.status)}>{titleCase(o.status)}</Badge>
+                       </td>
+                       <td>
+-                        <Badge className={paymentStatusClasses(order.paymentStatus)}>
+-                          {titleCase(order.paymentStatus)}
++                        <Badge className={paymentStatusClasses(o.paymentStatus)}>
++                          {titleCase(o.paymentStatus)}
+                         </Badge>
+-                        <p className="text-[11px] text-ink-3 mt-0.5">
+-                          {titleCase(order.paymentMethod)}
+-                        </p>
+-                      </td>
+-                      <td className="text-right font-semibold tabular-nums">
+-                        {formatPrice(order.total)}
++                        <p className="text-[11px] text-ink-3 mt-0.5">{titleCase(o.paymentMethod)}</p>
+                       </td>
++                      <td className="text-right font-semibold tabular-nums">{formatPrice(o.total)}</td>
+                       <td className="text-ink-3 text-xs whitespace-nowrap">
+-                        {relativeTime(order.createdAt)}
++                        {relativeTime(o.createdAt)}
+                       </td>
+                       <td className="text-right">
+                         <Link
+-                          href={`/orders/${order.id}`}
++                          href={`/orders/${o.id}`}
+                           className="text-ink-3 hover:text-green inline-block"
+-                          aria-label={`Open order ${order.number}`}
++                          aria-label={`Open order ${o.number}`}
+                         >
+                           <ChevronRight className="h-4 w-4" />
+                         </Link>
+@@ -158,20 +394,20 @@ export default function OrdersPage() {
+             </div>
+ 
+             <Pagination
+-              page={data.meta.page}
+-              totalPages={data.meta.totalPages}
+-              total={data.meta.total}
+-              limit={data.meta.limit}
++              page={data!.meta.page}
++              totalPages={data!.meta.totalPages}
++              total={data!.meta.total}
++              limit={data!.meta.limit}
+               onPageChange={setPage}
+             />
+           </>
+         ) : (
+           <EmptyState
+             icon={<ShoppingCart className="h-7 w-7" />}
+-            title={debounced || status ? 'No matching orders' : 'No orders yet'}
++            title={hasFilters ? 'No matching orders' : 'No orders yet'}
+             description={
+-              debounced || status
+-                ? 'Try a different search term or status filter.'
++              hasFilters
++                ? 'Try a different search term or adjust the filters.'
+                 : 'Orders will show up here once customers start checking out.'
+             }
+           />
+@@ -180,3 +416,27 @@ export default function OrdersPage() {
+     </>
+   )
+ }
++
++function SortButton({
++  label,
++  active,
++  order,
++  onClick,
++}: {
++  label: string
++  active: boolean
++  order: 'asc' | 'desc'
++  onClick: () => void
++}) {
++  return (
++    <button
++      type="button"
++      onClick={onClick}
++      className={`inline-flex items-center gap-1 hover:text-ink ${active ? 'text-ink' : 'text-ink-3'}`}
++    >
++      {label}
++      {active &&
++        (order === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
++    </button>
++  )
++}
+diff --git a/apps/admin/src/app/(dashboard)/page.tsx b/apps/admin/src/app/(dashboard)/page.tsx
+index 5dd81f0..1ea2936 100644
+--- a/apps/admin/src/app/(dashboard)/page.tsx
++++ b/apps/admin/src/app/(dashboard)/page.tsx
+@@ -8,6 +8,7 @@ import {
+   AlertTriangle,
+   Package,
+   ArrowRight,
++  RefreshCcw,
+ } from 'lucide-react'
+ import { useOrders, useOrderStats } from '@/hooks/use-orders'
+ import { useCatalogueStats, useLowStock } from '@/hooks/use-products'
+@@ -89,6 +90,21 @@ export default function DashboardPage() {
+             loading={stats.isLoading}
+           />
+         )}
++        <StatCard
++          label="Today's orders"
++          value={stats.data?.todayOrders ?? 0}
++          hint="Placed since midnight"
++          icon={ShoppingCart}
++          loading={stats.isLoading}
++        />
++        <StatCard
++          label="Refund rate"
++          value={`${((stats.data?.refundRate ?? 0) * 100).toFixed(1)}%`}
++          hint={`${stats.data?.refundedOrders ?? 0} refunded all time`}
++          icon={RefreshCcw}
++          tone={(stats.data?.refundRate ?? 0) > 0.1 ? 'warn' : 'default'}
++          loading={stats.isLoading}
++        />
+       </div>
+ 
+       <div className="grid gap-6 xl:grid-cols-3">
+diff --git a/apps/admin/src/app/(dashboard)/returns/page.tsx b/apps/admin/src/app/(dashboard)/returns/page.tsx
+new file mode 100644
+index 0000000..174a8a0
+--- /dev/null
++++ b/apps/admin/src/app/(dashboard)/returns/page.tsx
+@@ -0,0 +1,169 @@
++'use client'
++
++import { useEffect, useState } from 'react'
++import Link from 'next/link'
++import { Undo2 } from 'lucide-react'
++import { useReturns, useUpdateReturnStatus, type ReturnFilters } from '@/hooks/use-returns'
++import { Panel, PageHeader, Badge, EmptyState, TableSkeleton, ErrorState } from '@/components/ui/panel'
++import { Select } from '@/components/ui/field'
++import { Button } from '@/components/ui/button'
++import { Pagination } from '@/components/ui/pagination'
++import { useToast } from '@/components/ui/toast'
++import {
++  RETURN_STATUSES,
++  nextReturnStatuses,
++  returnStatusClasses,
++  formatPrice,
++  relativeTime,
++  titleCase,
++} from '@/lib/utils'
++import type { ReturnRequest, ReturnStatus } from '@/types'
++
++const LIMIT = 20
++
++export default function ReturnsPage() {
++  const [status, setStatus] = useState<ReturnStatus | ''>('')
++  const [page, setPage] = useState(1)
++
++  useEffect(() => {
++    setPage(1)
++  }, [status])
++
++  const filters: ReturnFilters = { status: status || undefined, page, limit: LIMIT }
++  const { data, isLoading, isError, error, refetch } = useReturns(filters)
++
++  return (
++    <>
++      <PageHeader title="Returns" description="Review and moderate customer return requests." />
++
++      <Panel className="overflow-hidden">
++        <div className="flex flex-wrap items-center gap-3 p-4 border-b border-line">
++          <Select
++            className="w-auto min-w-[170px]"
++            value={status}
++            onChange={(e) => setStatus(e.target.value as ReturnStatus | '')}
++            aria-label="Filter by return status"
++          >
++            <option value="">All statuses</option>
++            {RETURN_STATUSES.map((s) => (
++              <option key={s} value={s}>{titleCase(s)}</option>
++            ))}
++          </Select>
++        </div>
++
++        {isLoading ? (
++          <TableSkeleton rows={8} cols={5} />
++        ) : isError ? (
++          <ErrorState
++            message={error instanceof Error ? error.message : 'Failed to load returns.'}
++            onRetry={() => void refetch()}
++          />
++        ) : data && data.items.length > 0 ? (
++          <>
++            <div className="table-wrap">
++              <table className="table">
++                <thead>
++                  <tr>
++                    <th>Order</th>
++                    <th>Reason</th>
++                    <th className="text-right">Order total</th>
++                    <th>Status</th>
++                    <th>Requested</th>
++                    <th>Moderate</th>
++                  </tr>
++                </thead>
++                <tbody>
++                  {data.items.map((r) => (
++                    <ReturnRow key={r.id} request={r} />
++                  ))}
++                </tbody>
++              </table>
++            </div>
++
++            <Pagination
++              page={data.meta.page}
++              totalPages={data.meta.totalPages}
++              total={data.meta.total}
++              limit={data.meta.limit}
++              onPageChange={setPage}
++            />
++          </>
++        ) : (
++          <EmptyState
++            icon={<Undo2 className="h-7 w-7" />}
++            title={status ? 'No matching returns' : 'No return requests'}
++            description={
++              status
++                ? 'Try a different status filter.'
++                : 'Approved return requests from customers will appear here.'
++            }
++          />
++        )}
++      </Panel>
++    </>
++  )
++}
++
++function ReturnRow({ request }: { request: ReturnRequest }) {
++  const { toast } = useToast()
++  const update = useUpdateReturnStatus()
++  const [next, setNext] = useState<ReturnStatus | ''>('')
++
++  const options = nextReturnStatuses(request.status) as ReturnStatus[]
++
++  async function apply() {
++    if (!next) return
++    try {
++      await update.mutateAsync({ id: request.id, status: next })
++      toast(`Return moved to ${titleCase(next)}.`)
++      setNext('')
++    } catch (err) {
++      toast(err instanceof Error ? err.message : 'Could not update return.', 'error')
++    }
++  }
++
++  return (
++    <tr>
++      <td>
++        <Link
++          href={`/orders/${request.order.id}`}
++          className="font-semibold text-green hover:underline font-mono text-xs"
++        >
++          {request.order.number}
++        </Link>
++      </td>
++      <td className="max-w-[280px]">
++        <p className="text-ink-2 text-sm truncate" title={request.reason}>
++          {request.reason}
++        </p>
++      </td>
++      <td className="text-right tabular-nums">{formatPrice(request.order.total)}</td>
++      <td>
++        <Badge className={returnStatusClasses(request.status)}>{titleCase(request.status)}</Badge>
++      </td>
++      <td className="text-ink-3 text-xs whitespace-nowrap">{relativeTime(request.createdAt)}</td>
++      <td>
++        {options.length === 0 ? (
++          <span className="text-xs text-ink-3">—</span>
++        ) : (
++          <div className="flex items-center gap-2">
++            <Select
++              className="w-auto min-w-[130px]"
++              value={next}
++              onChange={(e) => setNext(e.target.value as ReturnStatus)}
++              aria-label={`Move return for ${request.order.number}`}
++            >
++              <option value="">Move to…</option>
++              {options.map((s) => (
++                <option key={s} value={s}>{titleCase(s)}</option>
++              ))}
++            </Select>
++            <Button size="sm" variant="outline" onClick={apply} disabled={!next} loading={update.isPending}>
++              Apply
++            </Button>
++          </div>
++        )}
++      </td>
++    </tr>
++  )
++}
+diff --git a/apps/admin/src/components/layout/nav-config.ts b/apps/admin/src/components/layout/nav-config.ts
+index 6fa8716..933c7bc 100644
+--- a/apps/admin/src/components/layout/nav-config.ts
++++ b/apps/admin/src/components/layout/nav-config.ts
+@@ -2,6 +2,7 @@ import {
+   LayoutDashboard,
+   Package,
+   ShoppingCart,
++  Undo2,
+   Boxes,
+   Users,
+   Ticket,
+@@ -39,6 +40,7 @@ export const NAV_GROUPS: NavGroup[] = [
+     label: 'Commerce',
+     items: [
+       { label: 'Orders', href: '/orders', icon: ShoppingCart },
++      { label: 'Returns', href: '/returns', icon: Undo2 },
+       { label: 'Products', href: '/products', icon: Package, roles: MANAGE },
+       { label: 'Inventory', href: '/inventory', icon: Boxes, roles: MANAGE },
+       { label: 'Categories', href: '/categories', icon: FolderTree, roles: MANAGE, comingSoon: true },
+diff --git a/apps/admin/src/hooks/use-orders.ts b/apps/admin/src/hooks/use-orders.ts
+index b66ac63..abf58db 100644
+--- a/apps/admin/src/hooks/use-orders.ts
++++ b/apps/admin/src/hooks/use-orders.ts
+@@ -1,12 +1,32 @@
+ 'use client'
+ 
+ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+-import { api, buildQuery } from '@/lib/api'
+-import type { Order, OrderStats, OrderStatus, Paginated } from '@/types'
++import { api, buildQuery, API_URL } from '@/lib/api'
++import type {
++  Order,
++  OrderStats,
++  OrderStatus,
++  PaymentStatus,
++  PaymentMethod,
++  ShippingMethod,
++  Paginated,
++} from '@/types'
+ 
+ export interface OrderFilters {
+   status?: OrderStatus | ''
+   search?: string
++  paymentStatus?: PaymentStatus | ''
++  paymentMethod?: PaymentMethod | ''
++  shippingMethod?: ShippingMethod | ''
++  dateFrom?: string
++  dateTo?: string
++  /** Paisas — the caller converts the staff-entered rupee figure. */
++  minTotal?: number
++  maxTotal?: number
++  city?: string
++  province?: string
++  sort?: string
++  order?: 'asc' | 'desc'
+   page?: number
+   limit?: number
+ }
+@@ -41,19 +61,80 @@ export function useOrderStats(days = 30) {
+ }
+ 
+ export function useUpdateOrderStatus() {
++  const qc = useQueryClient()
++  return useMutation({
++    mutationFn: ({ id, status, note }: { id: string; status: OrderStatus; note?: string }) =>
++      api.patch(`/orders/${id}/status`, { status, note }),
++    onSuccess: () => {
++      void qc.invalidateQueries({ queryKey: orderKeys.all })
++    },
++  })
++}
++
++export function useSetTracking() {
++  const qc = useQueryClient()
++  return useMutation({
++    mutationFn: ({ id, trackingNumber }: { id: string; trackingNumber: string }) =>
++      api.patch(`/orders/${id}/tracking`, { trackingNumber }),
++    onSuccess: () => {
++      void qc.invalidateQueries({ queryKey: orderKeys.all })
++    },
++  })
++}
++
++export function useSetPaymentStatus() {
+   const qc = useQueryClient()
+   return useMutation({
+     mutationFn: ({
+       id,
+-      status,
++      paymentStatus,
+       note,
+     }: {
+       id: string
+-      status: OrderStatus
++      paymentStatus: PaymentStatus
+       note?: string
+-    }) => api.patch(`/orders/${id}/status`, { status, note }),
++    }) => api.patch(`/orders/${id}/payment-status`, { paymentStatus, note }),
++    onSuccess: () => {
++      void qc.invalidateQueries({ queryKey: orderKeys.all })
++    },
++  })
++}
++
++export interface BulkStatusResult {
++  requested: number
++  updated: number
++  skipped: number
++  notFound: number
++}
++
++export function useBulkStatus() {
++  const qc = useQueryClient()
++  return useMutation({
++    mutationFn: ({ ids, status, note }: { ids: string[]; status: OrderStatus; note?: string }) =>
++      api.post<BulkStatusResult>(`/orders/admin/bulk-status`, { ids, status, note }),
+     onSuccess: () => {
+       void qc.invalidateQueries({ queryKey: orderKeys.all })
+     },
+   })
+ }
++
++/**
++ * Download the current filtered view as CSV. The endpoint streams a file, so
++ * this goes through `fetch` directly rather than the JSON client — pagination
++ * params are dropped so the export covers the whole filtered set (server-capped).
++ */
++export async function exportOrdersCsv(filters: OrderFilters): Promise<void> {
++  const query = buildQuery({ ...filters, page: undefined, limit: undefined })
++  const res = await fetch(`${API_URL}/orders/admin/export${query}`, { credentials: 'include' })
++  if (!res.ok) throw new Error('Could not export orders.')
++
++  const blob = await res.blob()
++  const url = URL.createObjectURL(blob)
++  const a = document.createElement('a')
++  a.href = url
++  a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`
++  document.body.appendChild(a)
++  a.click()
++  a.remove()
++  URL.revokeObjectURL(url)
++}
+diff --git a/apps/admin/src/hooks/use-returns.ts b/apps/admin/src/hooks/use-returns.ts
+new file mode 100644
+index 0000000..1b3b4df
+--- /dev/null
++++ b/apps/admin/src/hooks/use-returns.ts
+@@ -0,0 +1,34 @@
++'use client'
++
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
++import { api, buildQuery } from '@/lib/api'
++import type { Paginated, ReturnRequest, ReturnStatus } from '@/types'
++
++export interface ReturnFilters {
++  status?: ReturnStatus | ''
++  page?: number
++  limit?: number
++}
++
++export const returnKeys = {
++  all: ['returns'] as const,
++  list: (filters: ReturnFilters) => ['returns', 'list', filters] as const,
++}
++
++export function useReturns(filters: ReturnFilters) {
++  return useQuery({
++    queryKey: returnKeys.list(filters),
++    queryFn: () => api.get<Paginated<ReturnRequest>>(`/returns/admin${buildQuery({ ...filters })}`),
++  })
++}
++
++export function useUpdateReturnStatus() {
++  const qc = useQueryClient()
++  return useMutation({
++    mutationFn: ({ id, status, note }: { id: string; status: ReturnStatus; note?: string }) =>
++      api.patch(`/returns/admin/${id}/status`, { status, note }),
++    onSuccess: () => {
++      void qc.invalidateQueries({ queryKey: returnKeys.all })
++    },
++  })
++}
+diff --git a/apps/admin/src/lib/utils.ts b/apps/admin/src/lib/utils.ts
+index 577faff..794813b 100644
+--- a/apps/admin/src/lib/utils.ts
++++ b/apps/admin/src/lib/utils.ts
+@@ -98,21 +98,27 @@ export const ORDER_STATUSES: OrderStatus[] = [
+   'out_for_delivery',
+   'delivered',
+   'cancelled',
+-  'returned',
++  'refunded',
+ ]
+ 
+-/** Statuses an order can legally move to from its current one. */
++/**
++ * Statuses an order can legally move to from its current one.
++ *
++ * This mirrors `ORDER_STATUS_FLOW` in apps/api (orders.service.ts) — the server
++ * enforces the same map, so a status offered here that the API rejects (as the
++ * old `returned` value did) is a bug. Change one, change both.
++ */
+ export function nextStatuses(current: OrderStatus): OrderStatus[] {
+   const flow: Record<OrderStatus, OrderStatus[]> = {
+     pending: ['confirmed', 'cancelled'],
+     confirmed: ['processing', 'cancelled'],
+     processing: ['packed', 'cancelled'],
+     packed: ['shipped', 'cancelled'],
+-    shipped: ['out_for_delivery', 'returned'],
+-    out_for_delivery: ['delivered', 'returned'],
+-    delivered: ['returned'],
++    shipped: ['out_for_delivery'],
++    out_for_delivery: ['delivered'],
++    delivered: ['refunded'],
+     cancelled: [],
+-    returned: [],
++    refunded: [],
+   }
+   return flow[current] ?? []
+ }
+@@ -127,7 +133,7 @@ export function statusClasses(status: OrderStatus) {
+     out_for_delivery: 'bg-purple-50 text-[#5B47B0]',
+     delivered: 'bg-green-light text-[#137A4C]',
+     cancelled: 'bg-red-50 text-alert',
+-    returned: 'bg-orange-50 text-[#8A5A2B]',
++    refunded: 'bg-orange-50 text-[#8A5A2B]',
+   }
+   return map[status] ?? 'bg-paper text-ink-3'
+ }
+@@ -142,6 +148,39 @@ export function paymentStatusClasses(status: string) {
+   return map[status] ?? 'bg-paper text-ink-3'
+ }
+ 
++// ─── Filter option lists (mirror the Prisma enums) ────────────
++
++export const PAYMENT_STATUSES = ['unpaid', 'paid', 'partially_refunded', 'refunded'] as const
++export const PAYMENT_METHODS = ['cod', 'jazzcash', 'easypaisa', 'bank_transfer', 'card'] as const
++export const SHIPPING_METHODS = ['standard', 'express', 'cod'] as const
++
++// ─── Returns ──────────────────────────────────────────────────
++
++export const RETURN_STATUSES = ['requested', 'approved', 'rejected', 'received', 'refunded'] as const
++
++/** Return-queue transitions — mirrors RETURN_STATUS_FLOW in apps/api. */
++export function nextReturnStatuses(current: string): string[] {
++  const flow: Record<string, string[]> = {
++    requested: ['approved', 'rejected'],
++    approved: ['received', 'rejected'],
++    received: ['refunded'],
++    rejected: [],
++    refunded: [],
++  }
++  return flow[current] ?? []
++}
++
++export function returnStatusClasses(status: string) {
++  const map: Record<string, string> = {
++    requested: 'bg-gold-tint text-gold-deep',
++    approved: 'bg-blue-50 text-[#1D6FA5]',
++    received: 'bg-purple-50 text-[#5B47B0]',
++    refunded: 'bg-green-light text-[#137A4C]',
++    rejected: 'bg-red-50 text-alert',
++  }
++  return map[status] ?? 'bg-paper text-ink-3'
++}
++
+ // ─── Stock ────────────────────────────────────────────────────
+ 
+ export function stockLevel(stock: number, threshold: number) {
+diff --git a/apps/admin/src/types/index.ts b/apps/admin/src/types/index.ts
+index ba00a85..c29a95f 100644
+--- a/apps/admin/src/types/index.ts
++++ b/apps/admin/src/types/index.ts
+@@ -7,6 +7,9 @@ export type Role = 'customer' | 'admin' | 'manager' | 'support' | 'fulfillment'
+ 
+ export type Tier = 'Economy' | 'Standard' | 'Premium'
+ 
++// Mirrors the Prisma `OrderStatus` enum exactly. `refunded` is the terminal
++// state; there is no `returned` order status — a physical return lives in the
++// Return model, and the order moves to `refunded` when its refund is issued.
+ export type OrderStatus =
+   | 'pending'
+   | 'confirmed'
+@@ -16,13 +19,16 @@ export type OrderStatus =
+   | 'out_for_delivery'
+   | 'delivered'
+   | 'cancelled'
+-  | 'returned'
++  | 'refunded'
+ 
+ export type PaymentMethod = 'cod' | 'jazzcash' | 'easypaisa' | 'bank_transfer' | 'card'
+ 
+ export type PaymentStatus = 'unpaid' | 'paid' | 'partially_refunded' | 'refunded'
+ 
+-export type ShippingMethod = 'standard' | 'express' | 'pickup'
++// Mirrors the Prisma `ShippingMethod` enum: standard | express | cod.
++export type ShippingMethod = 'standard' | 'express' | 'cod'
++
++export type ReturnStatus = 'requested' | 'approved' | 'rejected' | 'received' | 'refunded'
+ 
+ /**
+  * Staff profile returned by /auth/admin/login and /auth/admin/me.
+@@ -170,15 +176,29 @@ export interface ProductInput {
+   images?: MediaInput[]
+ }
+ 
++/**
++ * A line as the API returns it. The money fields the row carries are `price`
++ * (unit, paisas) and `quantity` — there is **no** `total` column, so a line
++ * total is `price × quantity`, computed at the display edge. `name`/`image`
++ * are snapshots taken at checkout, so a line still renders after the product
++ * is renamed or deleted; `product`/`variant` are live joins and may be absent.
++ */
+ export interface OrderItem {
+   id: string
+   productId: string
+   variantId: string
+-  quantity: number
++  name: string
++  image?: string | null
++  tier: Tier
++  size?: string | null
++  color?: string | null
++  scent?: string | null
+   price: number
+-  total: number
+-  product: { slug: string; nameEn: string }
+-  variant: ProductVariant
++  quantity: number
++  hasGiftWrap?: boolean
++  giftMessage?: string | null
++  product?: { slug: string; nameEn: string } | null
++  variant?: ProductVariant | null
+ }
+ 
+ export interface OrderTimelineEntry {
+@@ -188,12 +208,19 @@ export interface OrderTimelineEntry {
+   createdAt: string
+ }
+ 
++/**
++ * The address exactly as the API returns it (the raw Prisma `Address`). The
++ * field names are `fullName`/`addressLine1`/`addressLine2` — NOT
++ * `name`/`line1`/`line2`. Getting these wrong renders a blank shipping block,
++ * which is precisely the bug this type once caused.
++ */
+ export interface OrderAddress {
+   id: string
+-  name: string
++  label?: string
++  fullName: string
+   phone: string
+-  line1: string
+-  line2?: string | null
++  addressLine1: string
++  addressLine2?: string | null
+   city: string
+   province?: string | null
+   postalCode?: string | null
+@@ -232,9 +259,40 @@ export interface OrderStats {
+   recentOrders: number
+   recentRevenue: number
+   averageOrderValue: number
++  todayOrders: number
++  refundedOrders: number
++  /** Fraction 0–1; format as a percentage for display. */
++  refundRate: number
+   byStatus: { status: OrderStatus; count: number }[]
+ }
+ 
++export interface ReturnOrderItem {
++  id: string
++  name: string
++  quantity: number
++  price: number
++  image?: string | null
++}
++
++/** A return request as the admin queue receives it. */
++export interface ReturnRequest {
++  id: string
++  reason: string
++  status: ReturnStatus
++  note?: string | null
++  images?: string | null
++  createdAt: string
++  updatedAt: string
++  order: {
++    id: string
++    number: string
++    total: number
++    status: OrderStatus
++    createdAt: string
++    items: ReturnOrderItem[]
++  }
++}
++
+ export interface CatalogueStats {
+   productCount: number
+   activeCount: number
+diff --git a/apps/api/src/orders/dto/bulk-status.dto.ts b/apps/api/src/orders/dto/bulk-status.dto.ts
+new file mode 100644
+index 0000000..bc1f6f4
+--- /dev/null
++++ b/apps/api/src/orders/dto/bulk-status.dto.ts
+@@ -0,0 +1,32 @@
++import {
++  IsArray,
++  ArrayMinSize,
++  ArrayMaxSize,
++  IsString,
++  IsEnum,
++  IsOptional,
++  MaxLength,
++} from 'class-validator'
++import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
++import { OrderStatus } from '@prisma/client'
++
++export class BulkStatusDto {
++  @ApiProperty({ type: [String] })
++  @IsArray()
++  @ArrayMinSize(1, { message: 'Select at least one order' })
++  // A ceiling keeps a single request from trying to move the whole table in
++  // one transaction.
++  @ArrayMaxSize(200, { message: 'A bulk action is limited to 200 orders at a time' })
++  @IsString({ each: true })
++  ids: string[]
++
++  @ApiProperty({ enum: OrderStatus })
++  @IsEnum(OrderStatus)
++  status: OrderStatus
++
++  @ApiPropertyOptional()
++  @IsOptional()
++  @IsString()
++  @MaxLength(500)
++  note?: string
++}
+diff --git a/apps/api/src/orders/dto/order-query.dto.ts b/apps/api/src/orders/dto/order-query.dto.ts
+new file mode 100644
+index 0000000..3140283
+--- /dev/null
++++ b/apps/api/src/orders/dto/order-query.dto.ts
+@@ -0,0 +1,67 @@
++import {
++  IsOptional,
++  IsString,
++  IsEnum,
++  IsInt,
++  Min,
++  IsIn,
++  IsDateString,
++  MaxLength,
++} from 'class-validator'
++import { Type } from 'class-transformer'
++import { ApiPropertyOptional } from '@nestjs/swagger'
++import { OrderStatus, PaymentStatus, PaymentMethod, ShippingMethod } from '@prisma/client'
++
++/**
++ * Query parameters for the admin order listing and CSV export.
++ *
++ * A class with decorators, not an inline type literal: the global
++ * ValidationPipe runs `whitelist`/`forbidNonWhitelisted`, so an unknown query
++ * key is rejected rather than silently ignored, and every value is bounded.
++ *
++ * Money bounds (`minTotal`/`maxTotal`) are in **paisas**, matching the wire —
++ * the admin converts the staff-entered rupee figure at its edge.
++ */
++export class OrderQueryDto {
++  @ApiPropertyOptional() @IsOptional() @IsString() page?: string
++  @ApiPropertyOptional() @IsOptional() @IsString() limit?: string
++
++  @ApiPropertyOptional({ enum: OrderStatus })
++  @IsOptional() @IsEnum(OrderStatus) status?: OrderStatus
++
++  @ApiPropertyOptional()
++  @IsOptional() @IsString() @MaxLength(120) search?: string
++
++  @ApiPropertyOptional({ enum: PaymentStatus })
++  @IsOptional() @IsEnum(PaymentStatus) paymentStatus?: PaymentStatus
++
++  @ApiPropertyOptional({ enum: PaymentMethod })
++  @IsOptional() @IsEnum(PaymentMethod) paymentMethod?: PaymentMethod
++
++  @ApiPropertyOptional({ enum: ShippingMethod })
++  @IsOptional() @IsEnum(ShippingMethod) shippingMethod?: ShippingMethod
++
++  @ApiPropertyOptional({ description: 'ISO date; inclusive lower bound' })
++  @IsOptional() @IsDateString() dateFrom?: string
++
++  @ApiPropertyOptional({ description: 'ISO date; inclusive upper bound (whole day)' })
++  @IsOptional() @IsDateString() dateTo?: string
++
++  @ApiPropertyOptional({ description: 'Minimum total in paisas' })
++  @IsOptional() @Type(() => Number) @IsInt() @Min(0) minTotal?: number
++
++  @ApiPropertyOptional({ description: 'Maximum total in paisas' })
++  @IsOptional() @Type(() => Number) @IsInt() @Min(0) maxTotal?: number
++
++  @ApiPropertyOptional()
++  @IsOptional() @IsString() @MaxLength(60) city?: string
++
++  @ApiPropertyOptional()
++  @IsOptional() @IsString() @MaxLength(60) province?: string
++
++  @ApiPropertyOptional({ enum: ['createdAt', 'total', 'number', 'status'] })
++  @IsOptional() @IsIn(['createdAt', 'total', 'number', 'status']) sort?: string
++
++  @ApiPropertyOptional({ enum: ['asc', 'desc'] })
++  @IsOptional() @IsIn(['asc', 'desc']) order?: string
++}
+diff --git a/apps/api/src/orders/dto/update-payment-status.dto.ts b/apps/api/src/orders/dto/update-payment-status.dto.ts
+new file mode 100644
+index 0000000..64f73c8
+--- /dev/null
++++ b/apps/api/src/orders/dto/update-payment-status.dto.ts
+@@ -0,0 +1,15 @@
++import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator'
++import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
++import { PaymentStatus } from '@prisma/client'
++
++export class UpdatePaymentStatusDto {
++  @ApiProperty({ enum: PaymentStatus })
++  @IsEnum(PaymentStatus)
++  paymentStatus: PaymentStatus
++
++  @ApiPropertyOptional({ description: 'Optional note added to the order timeline' })
++  @IsOptional()
++  @IsString()
++  @MaxLength(500)
++  note?: string
++}
+diff --git a/apps/api/src/orders/dto/update-tracking.dto.ts b/apps/api/src/orders/dto/update-tracking.dto.ts
+new file mode 100644
+index 0000000..3cca6bb
+--- /dev/null
++++ b/apps/api/src/orders/dto/update-tracking.dto.ts
+@@ -0,0 +1,12 @@
++import { IsString, IsNotEmpty, MaxLength } from 'class-validator'
++import { ApiProperty } from '@nestjs/swagger'
++
++export class UpdateTrackingDto {
++  @ApiProperty({ description: 'Courier tracking number to record on the order' })
++  @IsString()
++  // `@IsString()` alone accepts "" — a blank tracking number is not an
++  // assignment, it is a clear, which has its own affordance in the UI.
++  @IsNotEmpty({ message: 'A tracking number is required' })
++  @MaxLength(80)
++  trackingNumber: string
++}
+diff --git a/apps/api/src/orders/orders.controller.ts b/apps/api/src/orders/orders.controller.ts
+index c6da88a..392c4b2 100644
+--- a/apps/api/src/orders/orders.controller.ts
++++ b/apps/api/src/orders/orders.controller.ts
+@@ -1,11 +1,15 @@
+-import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards, HttpCode } from '@nestjs/common'
++import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards, HttpCode, Res } from '@nestjs/common'
++import { Response } from 'express'
+ import { ApiTags, ApiBearerAuth, ApiCookieAuth, ApiOperation } from '@nestjs/swagger'
+ import { Throttle } from '@nestjs/throttler'
+-import { OrderStatus } from '@prisma/client'
+-import { OrdersService } from './orders.service'
++import { OrdersService, OrderAdminFilters } from './orders.service'
+ import { CreateOrderDto } from './dto/create-order.dto'
+ import { UpdateOrderStatusDto } from './dto/update-order-status.dto'
+ import { TrackOrderDto } from './dto/track-order.dto'
++import { OrderQueryDto } from './dto/order-query.dto'
++import { UpdateTrackingDto } from './dto/update-tracking.dto'
++import { UpdatePaymentStatusDto } from './dto/update-payment-status.dto'
++import { BulkStatusDto } from './dto/bulk-status.dto'
+ import { JwtAuthGuard } from '../auth/jwt-auth.guard'
+ import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard'
+ import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard'
+@@ -13,6 +17,27 @@ import { RolesGuard } from '../auth/roles.guard'
+ import { Roles, STAFF_ORDERS } from '../auth/roles.decorator'
+ import { CurrentUser } from '../auth/current-user.decorator'
+ 
++/** Map validated query params to the service's filter shape (dates parsed). */
++function toOrderFilters(q: OrderQueryDto): OrderAdminFilters {
++  return {
++    status: q.status,
++    search: q.search,
++    paymentStatus: q.paymentStatus,
++    paymentMethod: q.paymentMethod,
++    shippingMethod: q.shippingMethod,
++    // A date-only bound is widened to the whole day so `dateTo = 6 Aug` also
++    // matches an order placed at 6 Aug 18:00.
++    dateFrom: q.dateFrom ? new Date(q.dateFrom) : undefined,
++    dateTo: q.dateTo ? new Date(new Date(q.dateTo).getTime() + 24 * 60 * 60 * 1000 - 1) : undefined,
++    minTotal: q.minTotal,
++    maxTotal: q.maxTotal,
++    city: q.city,
++    province: q.province,
++    sort: q.sort,
++    order: q.order === 'asc' ? 'asc' : q.order === 'desc' ? 'desc' : undefined,
++  }
++}
++
+ @ApiTags('orders')
+ @Controller('orders')
+ export class OrdersController {
+@@ -48,14 +73,9 @@ export class OrdersController {
+   @UseGuards(AdminJwtAuthGuard, RolesGuard)
+   @Roles(...STAFF_ORDERS)
+   @ApiCookieAuth()
+-  @ApiOperation({ summary: 'Admin: all orders' })
+-  findAll(
+-    @Query('page') page = '1',
+-    @Query('limit') limit = '20',
+-    @Query('status') status?: OrderStatus,
+-    @Query('search') search?: string,
+-  ) {
+-    return this.ordersService.findAll(undefined, +page, +limit, { status, search })
++  @ApiOperation({ summary: 'Admin: all orders (filter, sort, paginate)' })
++  findAll(@Query() query: OrderQueryDto) {
++    return this.ordersService.findAll(undefined, +(query.page ?? '1'), +(query.limit ?? '20'), toOrderFilters(query))
+   }
+ 
+   @Get('admin/stats')
+@@ -67,6 +87,34 @@ export class OrdersController {
+     return this.ordersService.adminStats(+days)
+   }
+ 
++  /**
++   * CSV of the current filtered view. Declared before `admin/:id` so the
++   * static path is not swallowed by the parameterised route.
++   */
++  @Get('admin/export')
++  @UseGuards(AdminJwtAuthGuard, RolesGuard)
++  @Roles(...STAFF_ORDERS)
++  @ApiCookieAuth()
++  @ApiOperation({ summary: 'Admin: export the current view as CSV' })
++  async export(@Query() query: OrderQueryDto, @Res({ passthrough: true }) res: Response) {
++    const csv = await this.ordersService.exportCsv(toOrderFilters(query))
++    res.set({
++      'Content-Type': 'text/csv; charset=utf-8',
++      'Content-Disposition': 'attachment; filename="orders.csv"',
++    })
++    return csv
++  }
++
++  @Post('admin/bulk-status')
++  @UseGuards(AdminJwtAuthGuard, RolesGuard)
++  @Roles(...STAFF_ORDERS)
++  @HttpCode(200)
++  @ApiCookieAuth()
++  @ApiOperation({ summary: 'Admin: apply one status to many orders' })
++  bulkStatus(@Body() dto: BulkStatusDto) {
++    return this.ordersService.bulkUpdateStatus(dto.ids, dto.status, dto.note)
++  }
++
+   @Get('admin/:id')
+   @UseGuards(AdminJwtAuthGuard, RolesGuard)
+   @Roles(...STAFF_ORDERS)
+@@ -110,6 +158,24 @@ export class OrdersController {
+     return this.ordersService.updateStatus(id, dto)
+   }
+ 
++  @Patch(':id/tracking')
++  @UseGuards(AdminJwtAuthGuard, RolesGuard)
++  @Roles(...STAFF_ORDERS)
++  @ApiCookieAuth()
++  @ApiOperation({ summary: 'Admin: set the courier tracking number' })
++  setTracking(@Param('id') id: string, @Body() dto: UpdateTrackingDto) {
++    return this.ordersService.setTracking(id, dto.trackingNumber)
++  }
++
++  @Patch(':id/payment-status')
++  @UseGuards(AdminJwtAuthGuard, RolesGuard)
++  @Roles(...STAFF_ORDERS)
++  @ApiCookieAuth()
++  @ApiOperation({ summary: 'Admin: mark payment paid / unpaid / refunded' })
++  setPaymentStatus(@Param('id') id: string, @Body() dto: UpdatePaymentStatusDto) {
++    return this.ordersService.setPaymentStatus(id, dto.paymentStatus, dto.note)
++  }
++
+   @Patch(':id/cancel')
+   @UseGuards(JwtAuthGuard)
+   @ApiBearerAuth()
+diff --git a/apps/api/src/orders/orders.service.spec.ts b/apps/api/src/orders/orders.service.spec.ts
+index b35f309..98c29d7 100644
+--- a/apps/api/src/orders/orders.service.spec.ts
++++ b/apps/api/src/orders/orders.service.spec.ts
+@@ -1,6 +1,6 @@
+ import { Test } from '@nestjs/testing'
+ import { BadRequestException, NotFoundException } from '@nestjs/common'
+-import { OrdersService } from './orders.service'
++import { OrdersService, canTransitionOrder } from './orders.service'
+ import { PrismaService } from '../prisma/prisma.service'
+ import { SettingsService } from '../settings/settings.service'
+ import { CreateOrderDto } from './dto/create-order.dto'
+@@ -308,6 +308,38 @@ describe('TrackOrderDto — order number format', () => {
+   })
+ })
+ 
++/**
++ * Status transitions are enforced server-side, not only narrowed in the admin
++ * dropdown. These lock the flow so a future edit cannot quietly allow a jump
++ * the operations process does not permit (e.g. pending → delivered) or reopen
++ * a terminal order.
++ */
++describe('order status transitions', () => {
++  it('allows each step of the forward flow', () => {
++    expect(canTransitionOrder('pending', 'confirmed')).toBe(true)
++    expect(canTransitionOrder('confirmed', 'processing')).toBe(true)
++    expect(canTransitionOrder('processing', 'packed')).toBe(true)
++    expect(canTransitionOrder('packed', 'shipped')).toBe(true)
++    expect(canTransitionOrder('shipped', 'out_for_delivery')).toBe(true)
++    expect(canTransitionOrder('out_for_delivery', 'delivered')).toBe(true)
++    expect(canTransitionOrder('delivered', 'refunded')).toBe(true)
++  })
++
++  it('allows cancelling only before dispatch', () => {
++    expect(canTransitionOrder('pending', 'cancelled')).toBe(true)
++    expect(canTransitionOrder('packed', 'cancelled')).toBe(true)
++    expect(canTransitionOrder('shipped', 'cancelled')).toBe(false)
++  })
++
++  it('rejects skips and reopening terminal states', () => {
++    expect(canTransitionOrder('pending', 'delivered')).toBe(false)
++    expect(canTransitionOrder('cancelled', 'confirmed')).toBe(false)
++    expect(canTransitionOrder('refunded', 'delivered')).toBe(false)
++    // Same-status is not a legal move — it would only add an empty timeline row.
++    expect(canTransitionOrder('pending', 'pending')).toBe(false)
++  })
++})
++
+ describe('CreateOrderDto — payment method', () => {
+   it('accepts only the methods that can actually take money', async () => {
+     // Guards against a gateway-backed method being re-enabled in the enum
+diff --git a/apps/api/src/orders/orders.service.ts b/apps/api/src/orders/orders.service.ts
+index 40a74cd..816c178 100644
+--- a/apps/api/src/orders/orders.service.ts
++++ b/apps/api/src/orders/orders.service.ts
+@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service'
+ import { SettingsService } from '../settings/settings.service'
+ import { CreateOrderDto } from './dto/create-order.dto'
+ import { UpdateOrderStatusDto } from './dto/update-order-status.dto'
+-import { OrderStatus, Prisma, Tier } from '@prisma/client'
++import { OrderStatus, PaymentStatus, Prisma, Tier } from '@prisma/client'
+ 
+ /**
+  * Crockford Base32 — `I`, `L`, `O` and `U` are absent so a customer reading a
+@@ -48,6 +48,68 @@ const ORDER_INCLUDE = {
+   returns: true,
+ }
+ 
++/**
++ * Legal order-status transitions, enforced server-side.
++ *
++ * The admin UI already narrows the options it offers (`nextStatuses` in
++ * apps/admin), but that is a convenience, not a control: a hand-rolled request
++ * could otherwise jump `pending → delivered` or reopen a cancelled order.
++ * This map and the admin's `nextStatuses` are mirrors — change one, change the
++ * other, exactly as the storefront/API validation rules are kept in sync.
++ *
++ * `cancelled` and `refunded` are terminal. A physical return is tracked in the
++ * `Return` model, not as an order status; when its refund is issued the order
++ * moves to `refunded`.
++ */
++export const ORDER_STATUS_FLOW: Record<OrderStatus, OrderStatus[]> = {
++  pending: ['confirmed', 'cancelled'],
++  confirmed: ['processing', 'cancelled'],
++  processing: ['packed', 'cancelled'],
++  packed: ['shipped', 'cancelled'],
++  shipped: ['out_for_delivery'],
++  out_for_delivery: ['delivered'],
++  delivered: ['refunded'],
++  cancelled: [],
++  refunded: [],
++}
++
++export function canTransitionOrder(from: OrderStatus, to: OrderStatus): boolean {
++  return ORDER_STATUS_FLOW[from]?.includes(to) === true
++}
++
++/** Filters accepted by the admin order listing and CSV export. */
++export interface OrderAdminFilters {
++  status?: OrderStatus
++  search?: string
++  paymentStatus?: PaymentStatus
++  paymentMethod?: Prisma.OrderWhereInput['paymentMethod']
++  shippingMethod?: Prisma.OrderWhereInput['shippingMethod']
++  dateFrom?: Date
++  dateTo?: Date
++  minTotal?: number
++  maxTotal?: number
++  city?: string
++  province?: string
++  sort?: string
++  order?: 'asc' | 'desc'
++}
++
++const SORTABLE_ORDER_FIELDS = ['createdAt', 'total', 'number', 'status'] as const
++
++/** A single CSV cell, quoted only when it contains a comma, quote or newline. */
++function csvCell(value: string): string {
++  return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
++}
++
++function toCsv(rows: string[][]): string {
++  return rows.map((r) => r.map(csvCell).join(',')).join('\r\n')
++}
++
++/** Paisas → a plain rupee string for a spreadsheet cell (no symbol, 2 dp). */
++function rupeeCell(paisas: number): string {
++  return (paisas / 100).toFixed(2)
++}
++
+ @Injectable()
+ export class OrdersService {
+   constructor(
+@@ -246,31 +308,82 @@ export class OrdersService {
+     return order
+   }
+ 
+-  async findAll(
+-    userId?: string,
+-    page = 1,
+-    limit = 20,
+-    filters: { status?: OrderStatus; search?: string } = {},
+-  ) {
+-    const where: Prisma.OrderWhereInput = {
++  /**
++   * Compose the Prisma `where` for an admin (or customer) order query.
++   *
++   * Extracted so the listing and the CSV export apply *exactly* the same
++   * filter — an export that quietly matched a different set than the screen it
++   * was launched from would be worse than no export.
++   */
++  private buildOrderWhere(filters: OrderAdminFilters, userId?: string): Prisma.OrderWhereInput {
++    return {
+       ...(userId ? { userId } : {}),
+       ...(filters.status ? { status: filters.status } : {}),
++      ...(filters.paymentStatus ? { paymentStatus: filters.paymentStatus } : {}),
++      ...(filters.paymentMethod ? { paymentMethod: filters.paymentMethod } : {}),
++      ...(filters.shippingMethod ? { shippingMethod: filters.shippingMethod } : {}),
++      ...(filters.dateFrom || filters.dateTo
++        ? {
++            createdAt: {
++              ...(filters.dateFrom ? { gte: filters.dateFrom } : {}),
++              ...(filters.dateTo ? { lte: filters.dateTo } : {}),
++            },
++          }
++        : {}),
++      ...(filters.minTotal != null || filters.maxTotal != null
++        ? {
++            total: {
++              ...(filters.minTotal != null ? { gte: filters.minTotal } : {}),
++              ...(filters.maxTotal != null ? { lte: filters.maxTotal } : {}),
++            },
++          }
++        : {}),
++      ...(filters.city || filters.province
++        ? {
++            address: {
++              is: {
++                ...(filters.city ? { city: { contains: filters.city } } : {}),
++                ...(filters.province ? { province: { contains: filters.province } } : {}),
++              },
++            },
++          }
++        : {}),
+       ...(filters.search
+         ? {
+             OR: [
+               { number: { contains: filters.search } },
++              { trackingNumber: { contains: filters.search } },
+               { guestPhone: { contains: filters.search } },
+               { guestEmail: { contains: filters.search } },
+               { user: { name: { contains: filters.search } } },
+               { user: { phone: { contains: filters.search } } },
++              { user: { email: { contains: filters.search } } },
+             ],
+           }
+         : {}),
+     }
++  }
++
++  async findAll(
++    userId?: string,
++    page = 1,
++    limit = 20,
++    filters: OrderAdminFilters = {},
++  ) {
++    const where = this.buildOrderWhere(filters, userId)
++
++    // Sort field is allowlisted so a query string cannot order by an arbitrary
++    // (or non-indexed) column; direction defaults to newest-first.
++    const sortField = (SORTABLE_ORDER_FIELDS as readonly string[]).includes(filters.sort ?? '')
++      ? (filters.sort as (typeof SORTABLE_ORDER_FIELDS)[number])
++      : 'createdAt'
++    const sortOrder: 'asc' | 'desc' = filters.order === 'asc' ? 'asc' : 'desc'
++    const orderBy = { [sortField]: sortOrder } as Prisma.OrderOrderByWithRelationInput
++
+     const [items, total] = await Promise.all([
+       this.prisma.order.findMany({
+         where, include: ORDER_INCLUDE,
+-        orderBy: { createdAt: 'desc' },
++        orderBy,
+         skip: (page - 1) * limit, take: limit,
+       }),
+       this.prisma.order.count({ where }),
+@@ -278,6 +391,50 @@ export class OrdersService {
+     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } }
+   }
+ 
++  /**
++   * CSV of the current filtered view. Bounded: an export is a snapshot of a
++   * filtered screen, not a full-table dump, so a careless "export everything"
++   * cannot stream the entire order history into a spreadsheet unnoticed.
++   */
++  async exportCsv(filters: OrderAdminFilters = {}): Promise<string> {
++    const EXPORT_CAP = 5000
++    const where = this.buildOrderWhere(filters)
++    const orders = await this.prisma.order.findMany({
++      where,
++      include: {
++        items: { select: { id: true } },
++        user: { select: { name: true, phone: true, email: true } },
++      },
++      orderBy: { createdAt: 'desc' },
++      take: EXPORT_CAP,
++    })
++
++    const header = [
++      'Order Number', 'Placed', 'Customer', 'Phone', 'Email', 'Status',
++      'Payment Status', 'Payment Method', 'Shipping Method', 'Items',
++      'Subtotal', 'Shipping', 'Discount', 'Tax', 'Total', 'Tracking',
++    ]
++    const rows = orders.map((o) => [
++      o.number,
++      o.createdAt.toISOString(),
++      o.user?.name ?? '',
++      o.user?.phone ?? o.guestPhone ?? '',
++      o.user?.email ?? o.guestEmail ?? '',
++      o.status,
++      o.paymentStatus,
++      o.paymentMethod,
++      o.shippingMethod,
++      String(o.items.length),
++      rupeeCell(o.subtotal),
++      rupeeCell(o.shippingCost),
++      rupeeCell(o.discount),
++      rupeeCell(o.tax),
++      rupeeCell(o.total),
++      o.trackingNumber ?? '',
++    ])
++    return toCsv([header, ...rows])
++  }
++
+   /** Admin: fetch a single order by id, no ownership constraint. */
+   async findByIdAdmin(id: string) {
+     const order = await this.prisma.order.findUnique({
+@@ -293,7 +450,10 @@ export class OrdersService {
+     const since = new Date()
+     since.setDate(since.getDate() - days)
+ 
+-    const [all, recent, byStatus] = await Promise.all([
++    const startOfToday = new Date()
++    startOfToday.setHours(0, 0, 0, 0)
++
++    const [all, recent, byStatus, todayOrders, refundedOrders] = await Promise.all([
+       this.prisma.order.aggregate({ _count: { id: true }, _sum: { total: true } }),
+       this.prisma.order.aggregate({
+         where: { createdAt: { gte: since }, status: { not: OrderStatus.cancelled } },
+@@ -301,18 +461,25 @@ export class OrdersService {
+         _sum: { total: true },
+       }),
+       this.prisma.order.groupBy({ by: ['status'], _count: { id: true } }),
++      this.prisma.order.count({ where: { createdAt: { gte: startOfToday } } }),
++      this.prisma.order.count({ where: { status: OrderStatus.refunded } }),
+     ])
+ 
+     const recentCount = recent._count.id ?? 0
+     const recentRevenue = recent._sum.total ?? 0
++    const totalOrders = all._count.id ?? 0
+ 
+     return {
+       periodDays: days,
+-      totalOrders: all._count.id ?? 0,
++      totalOrders,
+       totalRevenue: all._sum.total ?? 0,
+       recentOrders: recentCount,
+       recentRevenue,
+       averageOrderValue: recentCount > 0 ? Math.round(recentRevenue / recentCount) : 0,
++      todayOrders,
++      refundedOrders,
++      // Fraction (0–1); the dashboard formats it as a percentage.
++      refundRate: totalOrders > 0 ? refundedOrders / totalOrders : 0,
+       byStatus: byStatus.map((s) => ({ status: s.status, count: s._count.id })),
+     }
+   }
+@@ -455,12 +622,83 @@ export class OrdersService {
+     const order = await this.prisma.order.findUnique({ where: { id } })
+     if (!order) throw new NotFoundException('Order not found.')
+ 
++    // Enforced here, not only in the admin dropdown. The flow is the same shape
++    // the UI offers; the server is what makes it a rule rather than a hint.
++    if (!canTransitionOrder(order.status, dto.status)) {
++      throw new BadRequestException(
++        `An order that is ${order.status} cannot move to ${dto.status}.`,
++      )
++    }
++
+     return this.prisma.$transaction([
+       this.prisma.order.update({ where: { id }, data: { status: dto.status } }),
+       this.prisma.orderTimeline.create({ data: { orderId: id, status: dto.status, note: dto.note } }),
+     ])
+   }
+ 
++  /**
++   * Assign or clear the courier tracking number. Separate from status so a
++   * parcel can be marked shipped and its tracking added in either order.
++   */
++  async setTracking(id: string, trackingNumber: string) {
++    const order = await this.prisma.order.findUnique({ where: { id }, select: { id: true } })
++    if (!order) throw new NotFoundException('Order not found.')
++    return this.prisma.order.update({
++      where: { id },
++      data: { trackingNumber: trackingNumber.trim() || null },
++      include: ORDER_INCLUDE,
++    })
++  }
++
++  /**
++   * Move payment status by hand — for COD this is how an order becomes `paid`
++   * on collection, since no gateway callback exists to do it.
++   *
++   * There is no audit-log table yet (a later phase), so the change is recorded
++   * on the timeline against the order's current status. That is a trace, not a
++   * full audit entry, and is called out as such in the migration plan.
++   */
++  async setPaymentStatus(id: string, paymentStatus: PaymentStatus, note?: string) {
++    const order = await this.prisma.order.findUnique({ where: { id } })
++    if (!order) throw new NotFoundException('Order not found.')
++    const label = paymentStatus.replace(/_/g, ' ')
++    return this.prisma.$transaction([
++      this.prisma.order.update({ where: { id }, data: { paymentStatus } }),
++      this.prisma.orderTimeline.create({
++        data: { orderId: id, status: order.status, note: note?.trim() || `Payment marked ${label}` },
++      }),
++    ])
++  }
++
++  /**
++   * Apply one status to many orders. Each is checked against the same
++   * transition rule as a single update; orders that cannot legally move are
++   * skipped and counted rather than failing the whole batch.
++   */
++  async bulkUpdateStatus(ids: string[], status: OrderStatus, note?: string) {
++    const orders = await this.prisma.order.findMany({
++      where: { id: { in: ids } },
++      select: { id: true, status: true },
++    })
++    const eligible = orders.filter((o) => canTransitionOrder(o.status, status))
++
++    if (eligible.length > 0) {
++      await this.prisma.$transaction(
++        eligible.flatMap((o) => [
++          this.prisma.order.update({ where: { id: o.id }, data: { status } }),
++          this.prisma.orderTimeline.create({ data: { orderId: o.id, status, note } }),
++        ]),
++      )
++    }
++
++    return {
++      requested: ids.length,
++      updated: eligible.length,
++      skipped: orders.length - eligible.length,
++      notFound: ids.length - orders.length,
++    }
++  }
++
+   async cancel(id: string, userId?: string) {
+     const order = await this.prisma.order.findFirst({
+       where: { id, ...(userId ? { userId } : {}) },
+diff --git a/apps/api/src/returns/dto/update-return-status.dto.ts b/apps/api/src/returns/dto/update-return-status.dto.ts
+new file mode 100644
+index 0000000..0cd9d1b
+--- /dev/null
++++ b/apps/api/src/returns/dto/update-return-status.dto.ts
+@@ -0,0 +1,15 @@
++import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator'
++import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
++import { ReturnStatus } from '@prisma/client'
++
++export class UpdateReturnStatusDto {
++  @ApiProperty({ enum: ReturnStatus })
++  @IsEnum(ReturnStatus)
++  status: ReturnStatus
++
++  @ApiPropertyOptional({ description: 'Optional moderation note (e.g. reason for rejection)' })
++  @IsOptional()
++  @IsString()
++  @MaxLength(500)
++  note?: string
++}
+diff --git a/apps/api/src/returns/returns.controller.ts b/apps/api/src/returns/returns.controller.ts
+index e068c55..b4a1950 100644
+--- a/apps/api/src/returns/returns.controller.ts
++++ b/apps/api/src/returns/returns.controller.ts
+@@ -1,7 +1,9 @@
+-import { Controller, Get, Post, Body, Param, Query, UseGuards, ParseUUIDPipe } from '@nestjs/common'
++import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards, ParseUUIDPipe } from '@nestjs/common'
+ import { ApiTags, ApiBearerAuth, ApiCookieAuth, ApiOperation } from '@nestjs/swagger'
++import { ReturnStatus } from '@prisma/client'
+ import { ReturnsService } from './returns.service'
+ import { CreateReturnDto } from './dto/create-return.dto'
++import { UpdateReturnStatusDto } from './dto/update-return-status.dto'
+ import { JwtAuthGuard } from '../auth/jwt-auth.guard'
+ import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard'
+ import { RolesGuard } from '../auth/roles.guard'
+@@ -38,8 +40,21 @@ export class ReturnsController {
+   @Roles(...STAFF_ORDERS)
+   @ApiCookieAuth()
+   @ApiOperation({ summary: 'Admin: return queue' })
+-  findAll(@Query('page') page = '1', @Query('limit') limit = '20') {
+-    return this.returnsService.findAll(+page || 1, +limit || 20)
++  findAll(
++    @Query('page') page = '1',
++    @Query('limit') limit = '20',
++    @Query('status') status?: ReturnStatus,
++  ) {
++    return this.returnsService.findAll(+page || 1, +limit || 20, status)
++  }
++
++  @Patch('admin/:id/status')
++  @UseGuards(AdminJwtAuthGuard, RolesGuard)
++  @Roles(...STAFF_ORDERS)
++  @ApiCookieAuth()
++  @ApiOperation({ summary: 'Admin: approve / reject / receive / refund a return' })
++  updateStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateReturnStatusDto) {
++    return this.returnsService.updateStatus(id, dto.status, dto.note)
+   }
+ 
+   @Post()
+diff --git a/apps/api/src/returns/returns.service.ts b/apps/api/src/returns/returns.service.ts
+index f22735f..0bd4c04 100644
+--- a/apps/api/src/returns/returns.service.ts
++++ b/apps/api/src/returns/returns.service.ts
+@@ -6,7 +6,7 @@ import {
+ } from '@nestjs/common'
+ import { PrismaService } from '../prisma/prisma.service'
+ import { CreateReturnDto } from './dto/create-return.dto'
+-import { Prisma } from '@prisma/client'
++import { Prisma, ReturnStatus } from '@prisma/client'
+ 
+ /**
+  * Window during which a delivered order can be returned. Mirrors the policy
+@@ -15,6 +15,24 @@ import { Prisma } from '@prisma/client'
+  */
+ const RETURN_WINDOW_DAYS = 7
+ 
++/**
++ * Legal return-status transitions for the admin moderation queue.
++ *
++ * `rejected` and `refunded` are terminal. `refunded` is reached only from
++ * `received`, so the shop confirms the goods are back before money goes out.
++ */
++export const RETURN_STATUS_FLOW: Record<ReturnStatus, ReturnStatus[]> = {
++  requested: ['approved', 'rejected'],
++  approved: ['received', 'rejected'],
++  received: ['refunded'],
++  rejected: [],
++  refunded: [],
++}
++
++export function canTransitionReturn(from: ReturnStatus, to: ReturnStatus): boolean {
++  return RETURN_STATUS_FLOW[from]?.includes(to) === true
++}
++
+ const RETURN_INCLUDE = {
+   order: {
+     select: {
+@@ -137,7 +155,7 @@ export class ReturnsService {
+    * and status rules stay in one place; the admin moderation UI that consumes
+    * it is a later phase.
+    */
+-  async findAll(page = 1, limit = 20, status?: Prisma.EnumReturnStatusFilter) {
++  async findAll(page = 1, limit = 20, status?: ReturnStatus) {
+     const where: Prisma.ReturnWhereInput = status ? { status } : {}
+ 
+     const [items, total] = await Promise.all([
+@@ -153,4 +171,31 @@ export class ReturnsService {
+ 
+     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } }
+   }
++
++  /**
++   * Admin moderation: move a return along its lifecycle
++   * (approve / reject / mark received / refund), enforcing the transition
++   * rules server-side rather than trusting the button the staff member clicked.
++   */
++  async updateStatus(id: string, status: ReturnStatus, note?: string) {
++    const found = await this.prisma.return.findUnique({
++      where: { id },
++      include: RETURN_INCLUDE,
++    })
++    if (!found) throw new NotFoundException('Return request not found.')
++
++    if (!canTransitionReturn(found.status, status)) {
++      throw new BadRequestException(
++        `A return that is ${found.status} cannot move to ${status}.`,
++      )
++    }
++
++    return this.prisma.return.update({
++      where: { id },
++      // A moderation note replaces the prior note only when one is supplied,
++      // so approving without a comment does not wipe the customer's reason.
++      data: { status, ...(note ? { note } : {}) },
++      include: RETURN_INCLUDE,
++    })
++  }
+ }

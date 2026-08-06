@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateReturnDto } from './dto/create-return.dto'
-import { Prisma } from '@prisma/client'
+import { Prisma, ReturnStatus } from '@prisma/client'
 
 /**
  * Window during which a delivered order can be returned. Mirrors the policy
@@ -14,6 +14,24 @@ import { Prisma } from '@prisma/client'
  * a page that promises a rule the API does not enforce is worse than no page.
  */
 const RETURN_WINDOW_DAYS = 7
+
+/**
+ * Legal return-status transitions for the admin moderation queue.
+ *
+ * `rejected` and `refunded` are terminal. `refunded` is reached only from
+ * `received`, so the shop confirms the goods are back before money goes out.
+ */
+export const RETURN_STATUS_FLOW: Record<ReturnStatus, ReturnStatus[]> = {
+  requested: ['approved', 'rejected'],
+  approved: ['received', 'rejected'],
+  received: ['refunded'],
+  rejected: [],
+  refunded: [],
+}
+
+export function canTransitionReturn(from: ReturnStatus, to: ReturnStatus): boolean {
+  return RETURN_STATUS_FLOW[from]?.includes(to) === true
+}
 
 const RETURN_INCLUDE = {
   order: {
@@ -137,7 +155,7 @@ export class ReturnsService {
    * and status rules stay in one place; the admin moderation UI that consumes
    * it is a later phase.
    */
-  async findAll(page = 1, limit = 20, status?: Prisma.EnumReturnStatusFilter) {
+  async findAll(page = 1, limit = 20, status?: ReturnStatus) {
     const where: Prisma.ReturnWhereInput = status ? { status } : {}
 
     const [items, total] = await Promise.all([
@@ -152,5 +170,32 @@ export class ReturnsService {
     ])
 
     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } }
+  }
+
+  /**
+   * Admin moderation: move a return along its lifecycle
+   * (approve / reject / mark received / refund), enforcing the transition
+   * rules server-side rather than trusting the button the staff member clicked.
+   */
+  async updateStatus(id: string, status: ReturnStatus, note?: string) {
+    const found = await this.prisma.return.findUnique({
+      where: { id },
+      include: RETURN_INCLUDE,
+    })
+    if (!found) throw new NotFoundException('Return request not found.')
+
+    if (!canTransitionReturn(found.status, status)) {
+      throw new BadRequestException(
+        `A return that is ${found.status} cannot move to ${status}.`,
+      )
+    }
+
+    return this.prisma.return.update({
+      where: { id },
+      // A moderation note replaces the prior note only when one is supplied,
+      // so approving without a comment does not wipe the customer's reason.
+      data: { status, ...(note ? { note } : {}) },
+      include: RETURN_INCLUDE,
+    })
   }
 }

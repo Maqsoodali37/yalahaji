@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   Package,
   ShoppingCart,
+  Undo2,
   Boxes,
   Users,
   Ticket,
@@ -39,6 +40,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Commerce',
     items: [
       { label: 'Orders', href: '/orders', icon: ShoppingCart },
+      { label: 'Returns', href: '/returns', icon: Undo2 },
       { label: 'Products', href: '/products', icon: Package, roles: MANAGE },
       { label: 'Inventory', href: '/inventory', icon: Boxes, roles: MANAGE },
       { label: 'Categories', href: '/categories', icon: FolderTree, roles: MANAGE, comingSoon: true },

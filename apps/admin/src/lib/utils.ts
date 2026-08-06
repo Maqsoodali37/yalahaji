@@ -98,21 +98,27 @@ export const ORDER_STATUSES: OrderStatus[] = [
   'out_for_delivery',
   'delivered',
   'cancelled',
-  'returned',
+  'refunded',
 ]
 
-/** Statuses an order can legally move to from its current one. */
+/**
+ * Statuses an order can legally move to from its current one.
+ *
+ * This mirrors `ORDER_STATUS_FLOW` in apps/api (orders.service.ts) — the server
+ * enforces the same map, so a status offered here that the API rejects (as the
+ * old `returned` value did) is a bug. Change one, change both.
+ */
 export function nextStatuses(current: OrderStatus): OrderStatus[] {
   const flow: Record<OrderStatus, OrderStatus[]> = {
     pending: ['confirmed', 'cancelled'],
     confirmed: ['processing', 'cancelled'],
     processing: ['packed', 'cancelled'],
     packed: ['shipped', 'cancelled'],
-    shipped: ['out_for_delivery', 'returned'],
-    out_for_delivery: ['delivered', 'returned'],
-    delivered: ['returned'],
+    shipped: ['out_for_delivery'],
+    out_for_delivery: ['delivered'],
+    delivered: ['refunded'],
     cancelled: [],
-    returned: [],
+    refunded: [],
   }
   return flow[current] ?? []
 }
@@ -127,7 +133,7 @@ export function statusClasses(status: OrderStatus) {
     out_for_delivery: 'bg-purple-50 text-[#5B47B0]',
     delivered: 'bg-green-light text-[#137A4C]',
     cancelled: 'bg-red-50 text-alert',
-    returned: 'bg-orange-50 text-[#8A5A2B]',
+    refunded: 'bg-orange-50 text-[#8A5A2B]',
   }
   return map[status] ?? 'bg-paper text-ink-3'
 }
@@ -138,6 +144,39 @@ export function paymentStatusClasses(status: string) {
     unpaid: 'bg-gold-tint text-gold-deep',
     partially_refunded: 'bg-orange-50 text-[#8A5A2B]',
     refunded: 'bg-red-50 text-alert',
+  }
+  return map[status] ?? 'bg-paper text-ink-3'
+}
+
+// ─── Filter option lists (mirror the Prisma enums) ────────────
+
+export const PAYMENT_STATUSES = ['unpaid', 'paid', 'partially_refunded', 'refunded'] as const
+export const PAYMENT_METHODS = ['cod', 'jazzcash', 'easypaisa', 'bank_transfer', 'card'] as const
+export const SHIPPING_METHODS = ['standard', 'express', 'cod'] as const
+
+// ─── Returns ──────────────────────────────────────────────────
+
+export const RETURN_STATUSES = ['requested', 'approved', 'rejected', 'received', 'refunded'] as const
+
+/** Return-queue transitions — mirrors RETURN_STATUS_FLOW in apps/api. */
+export function nextReturnStatuses(current: string): string[] {
+  const flow: Record<string, string[]> = {
+    requested: ['approved', 'rejected'],
+    approved: ['received', 'rejected'],
+    received: ['refunded'],
+    rejected: [],
+    refunded: [],
+  }
+  return flow[current] ?? []
+}
+
+export function returnStatusClasses(status: string) {
+  const map: Record<string, string> = {
+    requested: 'bg-gold-tint text-gold-deep',
+    approved: 'bg-blue-50 text-[#1D6FA5]',
+    received: 'bg-purple-50 text-[#5B47B0]',
+    refunded: 'bg-green-light text-[#137A4C]',
+    rejected: 'bg-red-50 text-alert',
   }
   return map[status] ?? 'bg-paper text-ink-3'
 }

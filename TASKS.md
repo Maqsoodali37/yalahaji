@@ -59,10 +59,6 @@ Backends already exist for blog, categories, coupons and customers — those fou
 
 Needs a new `GET /reviews/admin` endpoint — only `findByProduct` exists today, so there is no way to see the pending queue across all products. Then build the admin screen (approve / reject / bulk approve / filter by rating).
 
-### Returns moderation queue
-
-`GET /returns/admin` exists. Missing: a status-transition endpoint (approve / reject / received / refunded) and the admin UI. The customer-facing half is done.
-
 ### Kit-category admin CRUD screens
 
 The API is complete and guarded (`/kit-categories` + admin CRUD). Nothing in the admin panel consumes it, so kit builder steps can only be changed via the seed.
@@ -94,3 +90,18 @@ Revenue and order trends over a date range, best/worst sellers, customer lifetim
 ### Testimonials API
 
 `components/home/testimonials-section.tsx` reads static content from `src/data/testimonials.ts`. Deliberately static for now — curated marketing copy with no admin surface. Only build this if marketing needs to edit it without a deploy.
+
+### Order management — enterprise OMS (phased, needs schema)
+
+The admin order screen now covers listing filters/sort/export, bulk status, tracking assignment, payment-status changes and returns moderation (all on the current schema). The remaining "enterprise OMS" scope is net-new and each item needs migrations and/or integrations. Do these in order; the audit's phased plan has the detail.
+
+- **Audit log** (`AuditLog` model: actor, action, entity, before/after JSON, IP, at) wired into every order/return/payment mutation. Foundational — do first. `OrderTimeline` currently records payment/status changes with no actor.
+- Internal vs customer notes (`OrderNote` model, `@mention`), replacing the single `Order.notes`.
+- Fulfilment status + assigned staff (`Order.fulfilmentStatus`, `Order.assignedStaffId`).
+- Shipment model (courier, label, history, delivery estimate); item-level edit/refund/replace.
+- Customer rollups (previous orders, total spend, AOV, LTV, tags, loyalty tier).
+- Document generation (invoice / packing slip / label / credit note / return slip PDF).
+- Communication engine (email/SMS/WhatsApp + templates), and a granular per-action RBAC (`refund` / `cancel` / `export` / `view costs` / `view profit`) once cost/profit data exists.
+- Risk level / source / sales channel / currency / invoice-number columns.
+
+Out of scope by recorded decision unless the business changes it: payment capture/void/gateway (COD-only), widening the public tracking payload.

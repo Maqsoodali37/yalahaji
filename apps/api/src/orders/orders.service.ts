@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service'
 import { SettingsService } from '../settings/settings.service'
 import { CreateOrderDto } from './dto/create-order.dto'
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto'
-import { OrderStatus, Prisma, Tier } from '@prisma/client'
+import { OrderStatus, PaymentStatus, Prisma, Tier } from '@prisma/client'
 
 /**
  * Crockford Base32 — `I`, `L`, `O` and `U` are absent so a customer reading a
@@ -46,6 +46,68 @@ const ORDER_INCLUDE = {
   coupon: { select: { code: true, type: true, value: true } },
   timeline: { orderBy: { createdAt: 'desc' as const } },
   returns: true,
+}
+
+/**
+ * Legal order-status transitions, enforced server-side.
+ *
+ * The admin UI already narrows the options it offers (`nextStatuses` in
+ * apps/admin), but that is a convenience, not a control: a hand-rolled request
+ * could otherwise jump `pending → delivered` or reopen a cancelled order.
+ * This map and the admin's `nextStatuses` are mirrors — change one, change the
+ * other, exactly as the storefront/API validation rules are kept in sync.
+ *
+ * `cancelled` and `refunded` are terminal. A physical return is tracked in the
+ * `Return` model, not as an order status; when its refund is issued the order
+ * moves to `refunded`.
+ */
+export const ORDER_STATUS_FLOW: Record<OrderStatus, OrderStatus[]> = {
+  pending: ['confirmed', 'cancelled'],
+  confirmed: ['processing', 'cancelled'],
+  processing: ['packed', 'cancelled'],
+  packed: ['shipped', 'cancelled'],
+  shipped: ['out_for_delivery'],
+  out_for_delivery: ['delivered'],
+  delivered: ['refunded'],
+  cancelled: [],
+  refunded: [],
+}
+
+export function canTransitionOrder(from: OrderStatus, to: OrderStatus): boolean {
+  return ORDER_STATUS_FLOW[from]?.includes(to) === true
+}
+
+/** Filters accepted by the admin order listing and CSV export. */
+export interface OrderAdminFilters {
+  status?: OrderStatus
+  search?: string
+  paymentStatus?: PaymentStatus
+  paymentMethod?: Prisma.OrderWhereInput['paymentMethod']
+  shippingMethod?: Prisma.OrderWhereInput['shippingMethod']
+  dateFrom?: Date
+  dateTo?: Date
+  minTotal?: number
+  maxTotal?: number
+  city?: string
+  province?: string
+  sort?: string
+  order?: 'asc' | 'desc'
+}
+
+const SORTABLE_ORDER_FIELDS = ['createdAt', 'total', 'number', 'status'] as const
+
+/** A single CSV cell, quoted only when it contains a comma, quote or newline. */
+function csvCell(value: string): string {
+  return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
+}
+
+function toCsv(rows: string[][]): string {
+  return rows.map((r) => r.map(csvCell).join(',')).join('\r\n')
+}
+
+/** Paisas → a plain rupee string for a spreadsheet cell (no symbol, 2 dp). */
+function rupeeCell(paisas: number): string {
+  return (paisas / 100).toFixed(2)
 }
 
 @Injectable()
@@ -246,36 +308,131 @@ export class OrdersService {
     return order
   }
 
-  async findAll(
-    userId?: string,
-    page = 1,
-    limit = 20,
-    filters: { status?: OrderStatus; search?: string } = {},
-  ) {
-    const where: Prisma.OrderWhereInput = {
+  /**
+   * Compose the Prisma `where` for an admin (or customer) order query.
+   *
+   * Extracted so the listing and the CSV export apply *exactly* the same
+   * filter — an export that quietly matched a different set than the screen it
+   * was launched from would be worse than no export.
+   */
+  private buildOrderWhere(filters: OrderAdminFilters, userId?: string): Prisma.OrderWhereInput {
+    return {
       ...(userId ? { userId } : {}),
       ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.paymentStatus ? { paymentStatus: filters.paymentStatus } : {}),
+      ...(filters.paymentMethod ? { paymentMethod: filters.paymentMethod } : {}),
+      ...(filters.shippingMethod ? { shippingMethod: filters.shippingMethod } : {}),
+      ...(filters.dateFrom || filters.dateTo
+        ? {
+            createdAt: {
+              ...(filters.dateFrom ? { gte: filters.dateFrom } : {}),
+              ...(filters.dateTo ? { lte: filters.dateTo } : {}),
+            },
+          }
+        : {}),
+      ...(filters.minTotal != null || filters.maxTotal != null
+        ? {
+            total: {
+              ...(filters.minTotal != null ? { gte: filters.minTotal } : {}),
+              ...(filters.maxTotal != null ? { lte: filters.maxTotal } : {}),
+            },
+          }
+        : {}),
+      ...(filters.city || filters.province
+        ? {
+            address: {
+              is: {
+                ...(filters.city ? { city: { contains: filters.city } } : {}),
+                ...(filters.province ? { province: { contains: filters.province } } : {}),
+              },
+            },
+          }
+        : {}),
       ...(filters.search
         ? {
             OR: [
               { number: { contains: filters.search } },
+              { trackingNumber: { contains: filters.search } },
               { guestPhone: { contains: filters.search } },
               { guestEmail: { contains: filters.search } },
               { user: { name: { contains: filters.search } } },
               { user: { phone: { contains: filters.search } } },
+              { user: { email: { contains: filters.search } } },
             ],
           }
         : {}),
     }
+  }
+
+  async findAll(
+    userId?: string,
+    page = 1,
+    limit = 20,
+    filters: OrderAdminFilters = {},
+  ) {
+    const where = this.buildOrderWhere(filters, userId)
+
+    // Sort field is allowlisted so a query string cannot order by an arbitrary
+    // (or non-indexed) column; direction defaults to newest-first.
+    const sortField = (SORTABLE_ORDER_FIELDS as readonly string[]).includes(filters.sort ?? '')
+      ? (filters.sort as (typeof SORTABLE_ORDER_FIELDS)[number])
+      : 'createdAt'
+    const sortOrder: 'asc' | 'desc' = filters.order === 'asc' ? 'asc' : 'desc'
+    const orderBy = { [sortField]: sortOrder } as Prisma.OrderOrderByWithRelationInput
+
     const [items, total] = await Promise.all([
       this.prisma.order.findMany({
         where, include: ORDER_INCLUDE,
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         skip: (page - 1) * limit, take: limit,
       }),
       this.prisma.order.count({ where }),
     ])
     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } }
+  }
+
+  /**
+   * CSV of the current filtered view. Bounded: an export is a snapshot of a
+   * filtered screen, not a full-table dump, so a careless "export everything"
+   * cannot stream the entire order history into a spreadsheet unnoticed.
+   */
+  async exportCsv(filters: OrderAdminFilters = {}): Promise<string> {
+    const EXPORT_CAP = 5000
+    const where = this.buildOrderWhere(filters)
+    const orders = await this.prisma.order.findMany({
+      where,
+      include: {
+        items: { select: { id: true } },
+        user: { select: { name: true, phone: true, email: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: EXPORT_CAP,
+    })
+
+    const header = [
+      'Order Number', 'Placed', 'Customer', 'Phone', 'Email', 'Status',
+      'Payment Status', 'Payment Method', 'Shipping Method', 'Items',
+      'Subtotal', 'Shipping', 'Discount', 'Tax', 'Total', 'Tracking',
+    ]
+    const rows = orders.map((o) => [
+      o.number,
+      o.createdAt.toISOString(),
+      o.user?.name ?? '',
+      o.user?.phone ?? o.guestPhone ?? '',
+      o.user?.email ?? o.guestEmail ?? '',
+      o.status,
+      o.paymentStatus,
+      o.paymentMethod,
+      o.shippingMethod,
+      String(o.items.length),
+      rupeeCell(o.subtotal),
+      rupeeCell(o.shippingCost),
+      rupeeCell(o.discount),
+      rupeeCell(o.tax),
+      rupeeCell(o.total),
+      o.trackingNumber ?? '',
+    ])
+    return toCsv([header, ...rows])
   }
 
   /** Admin: fetch a single order by id, no ownership constraint. */
@@ -293,7 +450,10 @@ export class OrdersService {
     const since = new Date()
     since.setDate(since.getDate() - days)
 
-    const [all, recent, byStatus] = await Promise.all([
+    const startOfToday = new Date()
+    startOfToday.setHours(0, 0, 0, 0)
+
+    const [all, recent, byStatus, todayOrders, refundedOrders] = await Promise.all([
       this.prisma.order.aggregate({ _count: { id: true }, _sum: { total: true } }),
       this.prisma.order.aggregate({
         where: { createdAt: { gte: since }, status: { not: OrderStatus.cancelled } },
@@ -301,18 +461,25 @@ export class OrdersService {
         _sum: { total: true },
       }),
       this.prisma.order.groupBy({ by: ['status'], _count: { id: true } }),
+      this.prisma.order.count({ where: { createdAt: { gte: startOfToday } } }),
+      this.prisma.order.count({ where: { status: OrderStatus.refunded } }),
     ])
 
     const recentCount = recent._count.id ?? 0
     const recentRevenue = recent._sum.total ?? 0
+    const totalOrders = all._count.id ?? 0
 
     return {
       periodDays: days,
-      totalOrders: all._count.id ?? 0,
+      totalOrders,
       totalRevenue: all._sum.total ?? 0,
       recentOrders: recentCount,
       recentRevenue,
       averageOrderValue: recentCount > 0 ? Math.round(recentRevenue / recentCount) : 0,
+      todayOrders,
+      refundedOrders,
+      // Fraction (0–1); the dashboard formats it as a percentage.
+      refundRate: totalOrders > 0 ? refundedOrders / totalOrders : 0,
       byStatus: byStatus.map((s) => ({ status: s.status, count: s._count.id })),
     }
   }
@@ -455,10 +622,81 @@ export class OrdersService {
     const order = await this.prisma.order.findUnique({ where: { id } })
     if (!order) throw new NotFoundException('Order not found.')
 
+    // Enforced here, not only in the admin dropdown. The flow is the same shape
+    // the UI offers; the server is what makes it a rule rather than a hint.
+    if (!canTransitionOrder(order.status, dto.status)) {
+      throw new BadRequestException(
+        `An order that is ${order.status} cannot move to ${dto.status}.`,
+      )
+    }
+
     return this.prisma.$transaction([
       this.prisma.order.update({ where: { id }, data: { status: dto.status } }),
       this.prisma.orderTimeline.create({ data: { orderId: id, status: dto.status, note: dto.note } }),
     ])
+  }
+
+  /**
+   * Assign or clear the courier tracking number. Separate from status so a
+   * parcel can be marked shipped and its tracking added in either order.
+   */
+  async setTracking(id: string, trackingNumber: string) {
+    const order = await this.prisma.order.findUnique({ where: { id }, select: { id: true } })
+    if (!order) throw new NotFoundException('Order not found.')
+    return this.prisma.order.update({
+      where: { id },
+      data: { trackingNumber: trackingNumber.trim() || null },
+      include: ORDER_INCLUDE,
+    })
+  }
+
+  /**
+   * Move payment status by hand — for COD this is how an order becomes `paid`
+   * on collection, since no gateway callback exists to do it.
+   *
+   * There is no audit-log table yet (a later phase), so the change is recorded
+   * on the timeline against the order's current status. That is a trace, not a
+   * full audit entry, and is called out as such in the migration plan.
+   */
+  async setPaymentStatus(id: string, paymentStatus: PaymentStatus, note?: string) {
+    const order = await this.prisma.order.findUnique({ where: { id } })
+    if (!order) throw new NotFoundException('Order not found.')
+    const label = paymentStatus.replace(/_/g, ' ')
+    return this.prisma.$transaction([
+      this.prisma.order.update({ where: { id }, data: { paymentStatus } }),
+      this.prisma.orderTimeline.create({
+        data: { orderId: id, status: order.status, note: note?.trim() || `Payment marked ${label}` },
+      }),
+    ])
+  }
+
+  /**
+   * Apply one status to many orders. Each is checked against the same
+   * transition rule as a single update; orders that cannot legally move are
+   * skipped and counted rather than failing the whole batch.
+   */
+  async bulkUpdateStatus(ids: string[], status: OrderStatus, note?: string) {
+    const orders = await this.prisma.order.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, status: true },
+    })
+    const eligible = orders.filter((o) => canTransitionOrder(o.status, status))
+
+    if (eligible.length > 0) {
+      await this.prisma.$transaction(
+        eligible.flatMap((o) => [
+          this.prisma.order.update({ where: { id: o.id }, data: { status } }),
+          this.prisma.orderTimeline.create({ data: { orderId: o.id, status, note } }),
+        ]),
+      )
+    }
+
+    return {
+      requested: ids.length,
+      updated: eligible.length,
+      skipped: orders.length - eligible.length,
+      notFound: ids.length - orders.length,
+    }
   }
 
   async cancel(id: string, userId?: string) {
