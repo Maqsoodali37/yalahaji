@@ -95,6 +95,31 @@ Read config through `SettingsService.getNumber/getBoolean/getString`, never `pri
 
 `config-catalogue.ts` is a **seed list, not a schema**. Adding a config is an INSERT; nothing in code needs to change.
 
+### Never hardcode a configured amount in the storefront
+
+Shipping thresholds, shipping costs, COD fees, gift-wrap prices, tax and minimum order value are shop configuration. **No constant, no literal in a component, no number baked into a translation string.**
+
+This is not a style rule. The storefront carried `FREE_SHIPPING_THRESHOLD = 5000` in `lib/utils.ts` while the API seeded `free_shipping_threshold = 299900` paisas, so the shipping policy page and the announcement bar promised free delivery over ₨5,000 while the cart, checkout and the invoice all applied ₨2,999. Six components and three message files each stated a figure of their own.
+
+How to read one:
+
+| Context | Source |
+|---|---|
+| Client component | `useShopSettings()` / `useFreeShippingThreshold()` (`lib/use-shop-settings.ts`) |
+| Server component | `await fetchSettings()` — cached, `revalidate: 60` |
+| Cart maths | `useCartStore(s => s.settings)` |
+
+**Fetched once per page load** by `CartBootstrap` into the cart store. A component that calls `/settings/public` for itself is a round trip for an answer that cannot differ between callers.
+
+Two further rules that follow from it:
+
+- **Format with `formatPrice`**, never by hand. `cart-page-client.tsx` used `amountUntilFree.toLocaleString()` and rendered a bare number beside a cart drawer that showed the symbol.
+- **A translation message takes `{amount}`; it never contains a figure.** `announce.freeShipping` held `<b>₨5,000</b>` in all three locales, so correcting the value meant editing three JSON files and hoping none was missed.
+
+Fallbacks live in exactly one place: `CONFIG_FALLBACK` in `adapters.ts`, mirroring the seeded catalogue. `SETTINGS_FALLBACK` is derived as `adaptSettings({})` rather than written out, because a second hand-written copy in rupees is a second place to drift. `adapters.test.ts` pins those numbers to the seed.
+
+Known exception: `app/[locale]/returns/page.tsx` quotes a ₨250–₨400 courier pickup range. That is a third-party charge the shop does not set and has no config key, so it stays prose.
+
 ---
 
 ## Features Implemented
@@ -103,6 +128,17 @@ Read config through `SettingsService.getNumber/getBoolean/getString`, never `pri
 Products with tiered variants (Economy / Standard / Premium), multilingual names and descriptions, images, badges, tags, size guides, kit contents. Filtering, sorting, pagination, predictive search.
 
 **Default variant selection** is centralised in `getDefaultVariant()` (`lib/utils.ts`): cheapest in stock, falling back to cheapest overall. The product card, the product page and add-to-cart must all use it. They previously decided independently, and with the API returning variants unordered, a card could advertise ₨1,199, open at ₨4,999, and add ₨4,999 to the basket. The API now also returns variants `orderBy: { price: 'asc' }`.
+
+### Product media
+Staff upload photos from the product form (`components/products/media-manager.tsx`). Files go straight to MinIO via `POST /media/upload` on selection; only the returned URL is held in form state, so the product payload stays JSON.
+
+`POST /media/upload` accepts JPEG, PNG, WebP and AVIF up to 10 MB, re-encodes everything to WebP at 1200px wide, and writes into one of the four folders in `MEDIA_FOLDERS`. The folder is an **allowlist, not a sanitiser** — it arrives as a form field and is concatenated into the object key, so `../` would otherwise write outside the prefix. `DELETE /media` refuses any URL that is not under the configured public base, for the same reason.
+
+The declared MIME type is checked, but sharp failing to decode is what actually decides a file is not an image — a browser's `Content-Type` is a claim, not evidence.
+
+**Exactly one image is primary.** `normaliseMedia()` in `products.service.ts` enforces this on every write: it promotes the first image when none is flagged, demotes extras when several are, and renumbers `order` from array position. Two queries depend on it — the cart's product select and the kit-contents select both use `where: { isPrimary: true }, take: 1`, so a product with no primary contributes no image at all and the customer reviews their basket against placeholders.
+
+Removing a photo in the admin panel deletes the stored object immediately, before the form is saved. The confirm dialog says so; cancelling the form afterwards does not bring it back.
 
 ### Cart
 Guest carts keyed by `X-Session-Id`, issued by `POST /cart/session` — unsigned IDs are rejected, so a caller cannot invent one and read someone else's cart. Signing in merges the guest cart into the account's.
@@ -312,6 +348,18 @@ Removing `bank_transfer` or `jazzcash` would need a migration that fails against
 
 ### Redis falls back to in-memory
 Availability beats cache coherence for this workload. The fallback is per-instance, so invalidation will not propagate across replicas — hence the warning log, which is the signal to fix Redis.
+
+### The primary image is resolved in the adapter, not at each call site
+`adaptImages()` in `lib/api/adapters.ts` sorts the primary photo first, so every surface that reads `images[0]` — product card, compare page and bar, kit builder, detail gallery — honours the flag without knowing it exists.
+
+The alternative was a `find(i => i.isPrimary) ?? images[0]` at each of the six call sites. Rejected: it is the same rule written six times, and the seventh surface added later would be written from the example of whichever one the author happened to copy. The adapter boundary already exists to reconcile the API's shape with what components expect, which is exactly what this is.
+
+Products whose photos predate the flag have no primary at all. Those keep their `order` untouched rather than having one invented, because `order` is then the only signal there is.
+
+### Removing a product photo deletes the file immediately
+Considered detaching only, leaving the object in MinIO. Rejected: orphaned files accumulate with nothing to reconcile them against, and storage that only ever grows is a cost nobody notices until it is large.
+
+The cost is that removal is not transactional with the form — cancelling after removing leaves the file gone. The confirm dialog states this outright rather than implying the change is pending. If the delete call fails the photo is still detached from the product, because a failure to tidy storage is not a reason to keep showing an image staff asked to remove.
 
 ### `getDefaultVariant` is the single definition of "which variant represents this product"
 Three surfaces previously decided independently and disagreed. Anything showing a product price must use it.

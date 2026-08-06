@@ -101,9 +101,14 @@ export function CartPageClient() {
             {/* Free shipping progress */}
             <div className="p-4 bg-green-tint border border-green/10 rounded-md">
               <p className="text-sm font-medium text-green mb-2">
+                {/* `amountUntilFree.toLocaleString()` before — the raw number
+                    with no currency symbol, while the cart drawer beside it
+                    used formatPrice. The message already carries the symbol
+                    for the shop's configured currency, so the '' suppresses a
+                    second one rather than dropping it. */}
                 {freeShippingProgress >= 100
                   ? t('freeShippingUnlocked')
-                  : t('freeShippingProgress', { amount: amountUntilFree.toLocaleString() })}
+                  : t('freeShippingProgress', { amount: formatPrice(amountUntilFree, '') })}
               </p>
               <div className="h-2 bg-white rounded-full overflow-hidden">
                 <div

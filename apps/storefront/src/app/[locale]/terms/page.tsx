@@ -8,7 +8,8 @@ import {
   PolicyList,
   PolicyNote,
 } from '@/components/layout/policy-page'
-import { FREE_SHIPPING_THRESHOLD, formatPrice } from '@/lib/utils'
+import { formatPrice } from '@/lib/utils'
+import { fetchSettings } from '@/lib/api'
 
 export const metadata: Metadata = {
   title: 'Terms & Conditions',
@@ -18,7 +19,13 @@ export const metadata: Metadata = {
 
 export default async function TermsPage() {
   const locale = await getLocale()
-  const threshold = formatPrice(FREE_SHIPPING_THRESHOLD)
+
+  // These are contractual terms, so the figures have to be the ones actually
+  // charged. `fetchSettings` is revalidated every 60s — a cached read, not a
+  // round trip per visit.
+  const settings = await fetchSettings()
+  const threshold = formatPrice(settings.freeShippingThreshold)
+  const standard = formatPrice(settings.standardShippingCost)
 
   return (
     <PolicyPage
@@ -86,7 +93,7 @@ export default async function TermsPage() {
             'All prices are listed in Pakistani Rupees (₨) and are inclusive of applicable taxes unless stated otherwise.',
             <>
               Shipping is free on orders of {threshold} and above; a flat charge
-              of ₨299 applies below that amount.
+              of {standard} applies below that amount.
             </>,
             'We accept JazzCash, Easypaisa, bank transfer and Cash on Delivery.',
             'We reserve the right to correct pricing errors. If a product was listed at an incorrect price, we will contact you before dispatch and you may confirm at the corrected price or cancel for a full refund.',

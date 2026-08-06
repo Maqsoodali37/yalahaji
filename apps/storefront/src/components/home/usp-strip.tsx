@@ -1,5 +1,8 @@
+'use client'
+
 import { Truck, RotateCcw, ShieldCheck, MessageCircle } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import { useFreeShippingThreshold } from '@/lib/use-shop-settings'
 
 // 4 USPs — matches approved design (grid-template-columns:repeat(4,1fr))
 const items = [
@@ -11,6 +14,10 @@ const items = [
 
 export function UspStrip() {
   const t = useTranslations('usp')
+  // `freeShippingDetail` is the only message here that takes a value. Passing
+  // `amount` to all four is harmless — next-intl ignores unused arguments —
+  // and keeps this a single `t()` call inside the map.
+  const { formatted } = useFreeShippingThreshold()
   return (
     <div className="container-max mt-6">
       {/* 1px gap on line-color background = separator lines between cells */}
@@ -31,7 +38,9 @@ export function UspStrip() {
               <strong className="block text-[13.5px] font-bold text-ink leading-tight">
                 {t(item.titleKey)}
               </strong>
-              <small className="text-[11.5px] text-stone">{t(item.detailKey)}</small>
+              <small className="text-[11.5px] text-stone">
+                {t(item.detailKey, { amount: formatted })}
+              </small>
             </div>
           </div>
         ))}

@@ -78,7 +78,7 @@
   },
   "usp": {
     "freeShipping": "مفت ڈیلیوری",
-    "freeShippingDetail": "₨2,999 سے زائد کے آرڈر پر",
+    "freeShippingDetail": "{amount} سے زائد کے آرڈر پر",
     "easyReturns": "آسان واپسی",
     "easyReturnsDetail": "7 دن بغیر سوال واپسی",
     "halal": "100% حلال",
@@ -114,7 +114,7 @@
     "description": "تفصیل",
     "specifications": "خصوصیات",
     "shipping": "ڈیلیوری اور واپسی",
-    "shippingInfo": "₨2,999 سے زائد پر مفت ڈیلیوری۔ عام ڈیلیوری 3-5 دن۔",
+    "shippingInfo": "{amount} سے زائد کے آرڈر پر مفت ڈیلیوری۔ عام ترسیل ۳ تا ۵ دن۔",
     "returnPolicy": "7 دن کی واپسی۔ اصل پیکجنگ میں غیر استعمال شدہ ہو۔",
     "badges": {
       "new": "نیا",
@@ -122,7 +122,10 @@
       "sale": "سیل",
       "bestseller": "بیسٹ سیلر",
       "limited": "محدود"
-    }
+    },
+    "freeShippingBadge": "مفت ڈیلیوری",
+    "freeShippingOver": "{amount} سے زائد",
+    "shippingDetail": "{amount} سے زائد کے تمام آرڈرز پر مفت ڈیلیوری۔ عام ترسیل ۳ تا ۵ کاروباری دن۔ فوری ترسیل (۱ تا ۲ دن) {express} میں دستیاب۔"
   },
   "cart": {
     "title": "آپ کا کارٹ",
@@ -279,7 +282,7 @@
     }
   },
   "announce": {
-    "freeShipping": "<b>₨5,000</b> سے زائد پر مفت ڈیلیوری",
+    "freeShipping": "<b>{amount}</b> سے زائد پر مفت ڈیلیوری",
     "cod": "پہلے دیکھیں، پھر ادائیگی کریں — کیش آن ڈیلیوری",
     "returns": "7 دن میں آسان واپسی"
   },
@@ -364,5 +367,8 @@
     "profile": "پروفائل",
     "returns": "واپسیاں",
     "account": "اکاؤنٹ"
+  },
+  "kitBuilder": {
+    "freeShippingNote": "{amount} سے زائد کے آرڈر پر مفت ڈیلیوری"
   }
 }

@@ -7,12 +7,14 @@ import { Panel, PanelHeader } from '@/components/ui/panel'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea, Select, Checkbox, FormField } from '@/components/ui/field'
 import { VariantEditor, emptyVariant } from './variant-editor'
+import { MediaManager } from './media-manager'
 import { useCategories } from '@/hooks/use-products'
 import { slugify, rupeesToPaisas, paisasToRupees } from '@/lib/utils'
-import type { Product, ProductInput, VariantInput } from '@/types'
+import type { MediaInput, Product, ProductInput, VariantInput } from '@/types'
 
-export interface ProductFormValues extends Omit<ProductInput, 'variants'> {
+export interface ProductFormValues extends Omit<ProductInput, 'variants' | 'images'> {
   variants: VariantInput[]
+  images: MediaInput[]
   isActive?: boolean
 }
 
@@ -46,6 +48,7 @@ function blankValues(): ProductFormValues {
     badges: [],
     tags: [],
     variants: [emptyVariant()],
+    images: [],
   }
 }
 
@@ -73,6 +76,13 @@ function toFormValues(product: Product): ProductFormValues {
     badges: product.badges?.map((b) => b.badge) ?? [],
     tags: product.tags?.map((t) => t.tag) ?? [],
     isActive: product.isActive,
+    // The API returns these already sorted by `order`; position in this array
+    // is what the next save writes back, so it must not be re-sorted here.
+    images: (product.images ?? []).map((img) => ({
+      url: img.url,
+      alt: img.alt ?? '',
+      isPrimary: img.isPrimary,
+    })),
     variants: product.variants.map((v) => ({
       sku: v.sku,
       tier: v.tier,
@@ -174,6 +184,16 @@ export function ProductForm({ product, submitting, onSubmit }: ProductFormProps)
         size: v.size?.trim() || undefined,
         color: v.color?.trim() || undefined,
         scent: v.scent?.trim() || undefined,
+      })),
+      // `order` is the array index, assigned by the API from the position it
+      // receives. Blank alt text is dropped rather than sent as "" — the
+      // storefront adapter falls back to the product name, which is a better
+      // description than an empty string.
+      images: values.images.map((img, index) => ({
+        url: img.url,
+        alt: img.alt?.trim() || undefined,
+        isPrimary: !!img.isPrimary,
+        order: index,
       })),
     }
 
@@ -302,6 +322,21 @@ export function ProductForm({ product, submitting, onSubmit }: ProductFormProps)
               />
             </FormField>
           </div>
+        </div>
+      </Panel>
+
+      {/* ─── Media ─────────────────────────────────────── */}
+      <Panel>
+        <PanelHeader
+          title="Photos"
+          description="The primary photo is what appears on cards, search results and the cart."
+        />
+        <div className="panel-pad">
+          <MediaManager
+            images={values.images}
+            onChange={(images) => set('images', images)}
+            disabled={submitting}
+          />
         </div>
       </Panel>
 

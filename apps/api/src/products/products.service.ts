@@ -31,6 +31,35 @@ const PRODUCT_SELECT = {
   },
 }
 
+interface IncomingMedia {
+  url: string
+  alt?: string
+  isPrimary?: boolean
+  order?: number
+}
+
+/**
+ * Force the media list into a shape the rest of the system can rely on:
+ * exactly one primary, and `order` matching the position staff arranged.
+ *
+ * Two callers already assume this and break quietly without it. The kit
+ * contents select above filters on `isPrimary: true` and takes one, so a
+ * product where nobody ticked the box contributes no image to a kit at all;
+ * and the storefront sorts primary-first, which is meaningless if two rows
+ * claim it. Normalising here means it holds no matter which client wrote it.
+ */
+export function normaliseMedia(images: IncomingMedia[]) {
+  const primaryIndex = images.findIndex((img) => img.isPrimary)
+  const chosen = primaryIndex === -1 ? 0 : primaryIndex
+
+  return images.map((img, i) => ({
+    url: img.url,
+    alt: img.alt,
+    isPrimary: i === chosen,
+    order: i,
+  }))
+}
+
 @Injectable()
 export class ProductsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -255,7 +284,7 @@ export class ProductsService {
         badges: badges ? { create: badges.map((b) => ({ badge: b })) } : undefined,
         tags: tags ? { create: tags.map((t) => ({ tag: t })) } : undefined,
         variants: variants ? { create: variants } : undefined,
-        images: images ? { create: images } : undefined,
+        images: images ? { create: normaliseMedia(images) } : undefined,
         sizeGuide: sizeGuide ? { create: sizeGuide } : undefined,
       },
       select: PRODUCT_SELECT,
@@ -320,7 +349,7 @@ export class ProductsService {
         await tx.productMedia.deleteMany({ where: { productId: id } })
         if (images.length > 0) {
           await tx.productMedia.createMany({
-            data: images.map((img) => ({ ...img, productId: id })),
+            data: normaliseMedia(images).map((img) => ({ ...img, productId: id })),
           })
         }
       }

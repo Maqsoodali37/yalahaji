@@ -88,6 +88,18 @@ export interface ProductImage {
   order: number
 }
 
+/**
+ * A photo as the product form holds it: no `id`, because the API replaces the
+ * whole media list on save rather than diffing it, and no `order`, because
+ * position in the array is the order — carrying a second copy of that is how
+ * the two drift apart.
+ */
+export interface MediaInput {
+  url: string
+  alt?: string
+  isPrimary?: boolean
+}
+
 export interface Product {
   id: string
   slug: string
@@ -155,6 +167,7 @@ export interface ProductInput {
   badges?: string[]
   tags?: string[]
   variants?: VariantInput[]
+  images?: MediaInput[]
 }
 
 export interface OrderItem {

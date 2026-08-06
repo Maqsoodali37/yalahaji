@@ -167,6 +167,28 @@ function TrackResult({
   const isOnDeliveryPath = STATUS_SEQUENCE.includes(order.status)
   const reachedIndex = STATUS_SEQUENCE.indexOf(order.status)
 
+  /**
+   * When each status was reached, from the timeline the API already returns.
+   *
+   * The timeline arrives newest-first, so overwriting on each pass leaves the
+   * *oldest* entry per status in the map. That is the one wanted: if an order
+   * is re-marked `shipped` after a failed delivery attempt, the customer wants
+   * the date it first shipped, not the correction.
+   */
+  const reachedAt = new Map<string, string>()
+  for (const entry of order.timeline) {
+    reachedAt.set(entry.status, entry.createdAt)
+  }
+
+  const formatStamp = (iso: string) =>
+    new Date(iso).toLocaleString(locale, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+
   const placed = new Date(order.createdAt).toLocaleDateString(locale, {
     day: 'numeric',
     month: 'long',
@@ -195,28 +217,88 @@ function TrackResult({
         )}
       </div>
 
-      {isOnDeliveryPath && (
+      {isOnDeliveryPath ? (
         <div className="p-5 border-b border-line">
           <h2 className="font-semibold text-ink text-sm mb-4">{t('progress')}</h2>
           <ol className="space-y-3">
             {STATUS_SEQUENCE.map((status, i) => {
               const reached = i <= reachedIndex
+              const stamp = reachedAt.get(status)
+
               return (
-                <li key={status} className="flex items-center gap-3">
+                <li key={status} className="flex items-baseline gap-3">
                   <span
                     aria-hidden
-                    className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                    className={`w-2.5 h-2.5 rounded-full shrink-0 translate-y-1 ${
                       reached ? 'bg-green' : 'bg-line'
                     }`}
                   />
-                  <span className={`text-sm ${reached ? 'text-ink font-medium' : 'text-stone'}`}>
+                  <span
+                    className={`text-sm shrink-0 ${
+                      reached ? 'text-ink font-medium' : 'text-stone'
+                    }`}
+                  >
                     {tStatus(status)}
                   </span>
+
+                  {/*
+                    A dotted leader rather than a fixed label column: the status
+                    names differ enough in length across en, ur and ar that any
+                    fixed width either truncates or leaves a gap in one of them.
+                  */}
+                  <span aria-hidden className="flex-1 border-b border-dotted border-line" />
+
+                  {stamp ? (
+                    <time dateTime={stamp} className="text-xs text-stone shrink-0 tabular-nums">
+                      {formatStamp(stamp)}
+                    </time>
+                  ) : (
+                    /*
+                      A step that has not happened has no date, and inventing a
+                      projected one would be a promise the shop has not made.
+                      The dash is marked decorative so a screen reader reads
+                      "Processing" and moves on rather than "Processing dash".
+                    */
+                    <span aria-hidden className="text-xs text-stone shrink-0">
+                      —
+                    </span>
+                  )}
                 </li>
               )
             })}
           </ol>
         </div>
+      ) : (
+        /*
+          Cancelled and refunded orders have no delivery path to draw, but they
+          do have a history the customer may need — particularly the date a
+          refund was recorded. Showing the raw timeline beats showing nothing.
+        */
+        order.timeline.length > 0 && (
+          <div className="p-5 border-b border-line">
+            <h2 className="font-semibold text-ink text-sm mb-4">{t('progress')}</h2>
+            <ol className="space-y-3">
+              {order.timeline.map((entry, i) => (
+                <li key={`${entry.status}-${i}`} className="flex items-baseline gap-3">
+                  <span
+                    aria-hidden
+                    className="w-2.5 h-2.5 rounded-full shrink-0 translate-y-1 bg-stone/40"
+                  />
+                  <span className="text-sm text-ink font-medium shrink-0">
+                    {tStatus(entry.status)}
+                  </span>
+                  <span aria-hidden className="flex-1 border-b border-dotted border-line" />
+                  <time
+                    dateTime={entry.createdAt}
+                    className="text-xs text-stone shrink-0 tabular-nums"
+                  >
+                    {formatStamp(entry.createdAt)}
+                  </time>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )
       )}
 
       <div className="p-5">

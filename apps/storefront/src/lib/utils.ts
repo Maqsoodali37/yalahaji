@@ -113,4 +113,10 @@ export function generateCartItemId() {
   return `ci-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
-export const FREE_SHIPPING_THRESHOLD = 5000
+// `FREE_SHIPPING_THRESHOLD` used to live here, hardcoded to 5000, while the
+// API's `free_shipping_threshold` said 2999. The shipping and terms pages
+// promised ₨5,000 while the cart, checkout and the invoice all used ₨2,999.
+//
+// There is no constant for it now, and there should not be one: the value is
+// shop configuration and comes from `/settings/public`. Client components read
+// it from `useShopSettings()`; server components await `fetchSettings()`.

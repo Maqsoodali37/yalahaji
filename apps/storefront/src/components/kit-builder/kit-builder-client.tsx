@@ -2,9 +2,10 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useLocale } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { ShoppingCart, CheckCircle, ChevronRight, ChevronLeft, X, PackageOpen } from 'lucide-react'
 import { useCartStore } from '@/store/cart'
+import { useFreeShippingThreshold } from '@/lib/use-shop-settings'
 import { formatPrice } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import type { Tier, Product, KitCategory } from '@/types'
@@ -22,6 +23,8 @@ export function KitBuilderClient({ kitCategories }: { kitCategories: KitCategory
   const locale = useLocale()
   const addItem = useCartStore((s) => s.addItem)
   const openCart = useCartStore((s) => s.openCart)
+  const tKit = useTranslations('kitBuilder')
+  const freeShipping = useFreeShippingThreshold()
 
   const [activeCatIdx, setActiveCatIdx] = useState(0)
   const [selections, setSelections] = useState<Record<string, Selection>>({})
@@ -332,9 +335,11 @@ export function KitBuilderClient({ kitCategories }: { kitCategories: KitCategory
                 )}
               </button>
 
-              <p className="text-[10px] text-stone text-center mt-2">
-                Free shipping on orders over ₨2,999
-              </p>
+              {freeShipping.isOffered && (
+                <p className="text-[10px] text-stone text-center mt-2">
+                  {tKit('freeShippingNote', { amount: freeShipping.formatted })}
+                </p>
+              )}
             </div>
           </div>
         </div>

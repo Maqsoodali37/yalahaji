@@ -37,6 +37,15 @@ export const MAX_ORDER_NOTES = 1000
 export const MAX_COUPON_CODE = 40
 export const MAX_RETURN_REASON = 2000
 
+/**
+ * Product media. Admin-side only, so unlike the constants above these have no
+ * storefront mirror to keep in step. Both sit on Prisma's default MySQL
+ * `VARCHAR(191)`; a longer value is a 500 from the driver, not a validation
+ * error the person filling the form can act on.
+ */
+export const MAX_MEDIA_URL = 191
+export const MAX_MEDIA_ALT = 191
+
 /** Guards against a single order being used to place a wholesale order. */
 export const MAX_ORDER_ITEMS = 50
 export const MAX_ITEM_QUANTITY = 99

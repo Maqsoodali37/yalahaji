@@ -1,7 +1,8 @@
-import { IsString, IsBoolean, IsOptional, IsArray, ValidateNested, IsEnum, IsInt, Min } from 'class-validator'
+import { IsString, IsBoolean, IsOptional, IsArray, ValidateNested, IsEnum, IsInt, IsNotEmpty, MaxLength, Min } from 'class-validator'
 import { Type } from 'class-transformer'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 import { Tier } from '@prisma/client'
+import { MAX_MEDIA_ALT, MAX_MEDIA_URL } from '../../common/validation'
 
 class VariantDto {
   @IsString() sku: string
@@ -16,11 +17,17 @@ class VariantDto {
   @IsOptional() @IsInt() lowStockThreshold?: number
 }
 
+/**
+ * `@IsString()` alone accepts `""`, and an empty url reaches the storefront as
+ * a product with a media row that renders the placeholder — indistinguishable
+ * from a product nobody has photographed yet. `@IsNotEmpty()` is what makes
+ * the field actually required.
+ */
 class MediaDto {
-  @IsString() url: string
-  @IsOptional() @IsString() alt?: string
+  @IsString() @IsNotEmpty({ message: 'Image url is required.' }) @MaxLength(MAX_MEDIA_URL) url: string
+  @IsOptional() @IsString() @MaxLength(MAX_MEDIA_ALT) alt?: string
   @IsOptional() @IsBoolean() isPrimary?: boolean
-  @IsOptional() @IsInt() order?: number
+  @IsOptional() @IsInt() @Min(0) order?: number
 }
 
 class SizeGuideDto {

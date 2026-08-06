@@ -25,9 +25,11 @@ Before running it in production:
 - Admin order search matches on the stored number, so staff searching `YH-2026-1042` still find it by prefix. Worth confirming against the real screen.
 
 
-### Verify the storefront production build on real hardware
+### Verify the storefront and admin production builds on real hardware
 
-`next build` could not be verified in the dev sandbox — it dies with a bus error before emitting anything, including on an untouched copy, so it is environmental rather than a code fault. Typecheck, Jest and Vitest all pass. Run `npm run build` in `apps/storefront` on a real machine and fix anything that surfaces.
+`next build` could not be verified in the dev sandbox — it dies with a bus error before emitting anything, including on an untouched copy, so it is environmental rather than a code fault. The admin app fails the same way, confirming it is the sandbox and not either codebase. Typecheck, Jest and Vitest all pass for all three apps.
+
+Run `npm run build` in `apps/storefront` and `apps/admin` on a real machine and fix anything that surfaces.
 
 ---
 
@@ -57,7 +59,9 @@ The API is complete and guarded (`/kit-categories` + admin CRUD). Nothing in the
 
 ### Install admin dependencies
 
-`apps/admin/node_modules` has never been installed, so the admin app has not been typechecked or built. Run `npm install` there and fix whatever surfaces.
+`apps/admin/node_modules` has never been installed in the repo itself. `npm install` cannot complete against the dev sandbox's FUSE mount — it permits file creation but not `rename`/`unlink`, so npm aborts with `ENOTEMPTY` partway through (the same reason `prisma generate` fails there with `EPERM`).
+
+Installing into a copy on a normal filesystem works, and `npx tsc --noEmit` passes clean against current `src`. So this is an environment task, not a code-fix task: run `npm install` in `apps/admin` on a real machine.
 
 ---
 

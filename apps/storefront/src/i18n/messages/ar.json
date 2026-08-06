@@ -78,7 +78,7 @@
   },
   "usp": {
     "freeShipping": "شحن مجاني",
-    "freeShippingDetail": "على الطلبات فوق ₨2,999",
+    "freeShippingDetail": "على الطلبات فوق {amount}",
     "easyReturns": "إرجاع سهل",
     "easyReturnsDetail": "إرجاع 7 أيام بدون أسئلة",
     "halal": "100% حلال",
@@ -114,7 +114,7 @@
     "description": "الوصف",
     "specifications": "المواصفات",
     "shipping": "الشحن والإرجاع",
-    "shippingInfo": "شحن مجاني على الطلبات فوق ₨2,999. توصيل عادي 3-5 أيام.",
+    "shippingInfo": "توصيل مجاني للطلبات فوق {amount}. التوصيل العادي من ٣ إلى ٥ أيام.",
     "returnPolicy": "إرجاع 7 أيام. يجب أن يكون المنتج غير مستخدم في تغليفه الأصلي.",
     "badges": {
       "new": "جديد",
@@ -122,7 +122,10 @@
       "sale": "تخفيض",
       "bestseller": "الأكثر مبيعاً",
       "limited": "محدود"
-    }
+    },
+    "freeShippingBadge": "شحن مجاني",
+    "freeShippingOver": "فوق {amount}",
+    "shippingDetail": "شحن مجاني على جميع الطلبات فوق {amount}. التوصيل العادي من ٣ إلى ٥ أيام عمل. التوصيل السريع (١-٢ يوم) متاح مقابل {express}."
   },
   "cart": {
     "title": "سلة التسوق",
@@ -166,7 +169,7 @@
     }
   },
   "announce": {
-    "freeShipping": "شحن مجاني للطلبات فوق <b>₨5,000</b>",
+    "freeShipping": "شحن مجاني للطلبات فوق <b>{amount}</b>",
     "cod": "افحص أولاً، ثم ادفع — الدفع عند الاستلام",
     "returns": "إرجاع سهل خلال 7 أيام"
   },
@@ -276,5 +279,8 @@
     "profile": "الملف الشخصي",
     "signOut": "تسجيل الخروج",
     "signedInAs": "مسجل الدخول باسم"
+  },
+  "kitBuilder": {
+    "freeShippingNote": "شحن مجاني للطلبات فوق {amount}"
   }
 }

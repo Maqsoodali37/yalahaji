@@ -75,6 +75,33 @@ function adaptImage(m: WireProductMedia, fallbackAlt: string): ProductImage {
   }
 }
 
+/**
+ * Primary photo first, everything else in the order staff arranged.
+ *
+ * The API sorts media by `order` alone, and six surfaces — the product card,
+ * the compare table and bar, the kit builder, the detail gallery — reach for
+ * `images[0]`. Without this, ticking "primary" in the admin panel changed
+ * nothing anyone could see unless that photo also happened to be first.
+ *
+ * Sorting here rather than at each call site is deliberate: the adapter
+ * boundary is the one place that already exists to reconcile the API's shape
+ * with what components expect, and a rule applied in six places is a rule that
+ * will shortly be applied in five.
+ */
+function adaptImages(
+  media: WireProductMedia[] | undefined,
+  fallbackAlt: string,
+): ProductImage[] {
+  const images = (media ?? []).map((m) => adaptImage(m, fallbackAlt))
+  const primary = images.findIndex((img) => img.isPrimary)
+
+  // -1 covers products whose photos predate the primary flag; leaving the
+  // order untouched is right, because `order` is then the only signal there is.
+  if (primary <= 0) return images
+
+  return [images[primary], ...images.filter((_, i) => i !== primary)]
+}
+
 export function adaptVariant(v: WireVariant): ProductVariant {
   return {
     id: v.id,
@@ -130,7 +157,7 @@ export function adaptProduct(p: WireProduct): Product {
     shortDescription: localised(p.shortDescEn, p.shortDescUr, p.shortDescAr),
     categoryId: p.category?.id ?? '',
     categorySlug: p.category?.slug ?? '',
-    images: (p.images ?? []).map((m) => adaptImage(m, name.en)),
+    images: adaptImages(p.images, name.en),
     variants,
     tags: (p.tags ?? []).map((t) => t.tag),
     badges: (p.badges ?? [])
@@ -440,31 +467,73 @@ function str(raw: RawConfig, key: string, fallback: string): string {
   return typeof v === 'string' && v.trim() !== '' ? v : fallback
 }
 
+/**
+ * Per-key fallbacks, in the API's units (paisas for money).
+ *
+ * **These mirror the seeded values in `apps/api/src/settings/config-catalogue.ts`.**
+ * Deliberately: an unreachable settings endpoint should degrade toward what
+ * the server will actually charge against, not toward a number the storefront
+ * invented. The storefront once carried its own ₨5,000 free-shipping constant
+ * while the API used ₨2,999, so the cart progress bar and the invoice
+ * disagreed about the same order.
+ */
+const CONFIG_FALLBACK = {
+  free_shipping_threshold: 299900,
+  standard_shipping_cost: 29900,
+  express_shipping_cost: 49900,
+  cod_fee: 0,
+  min_order_amount: 0,
+  gift_wrap_price: 9900,
+  tax_percentage: 0,
+  currency: 'PKR',
+  currency_symbol: '₨',
+  store_name: 'Yala Haji',
+  store_email: 'salam@yalahaji.com',
+  store_phone: '+923001234567',
+} as const
+
 export function adaptSettings(raw: WirePublicSettings): StoreSettings {
   return {
-    freeShippingThreshold: paisasToRupees(num(raw, 'free_shipping_threshold', 299900)),
-    standardShippingCost: paisasToRupees(num(raw, 'standard_shipping_cost', 29900)),
-    expressShippingCost: paisasToRupees(num(raw, 'express_shipping_cost', 49900)),
+    freeShippingThreshold: paisasToRupees(
+      num(raw, 'free_shipping_threshold', CONFIG_FALLBACK.free_shipping_threshold),
+    ),
+    standardShippingCost: paisasToRupees(
+      num(raw, 'standard_shipping_cost', CONFIG_FALLBACK.standard_shipping_cost),
+    ),
+    expressShippingCost: paisasToRupees(
+      num(raw, 'express_shipping_cost', CONFIG_FALLBACK.express_shipping_cost),
+    ),
 
-    codFee: paisasToRupees(num(raw, 'cod_fee', 0)),
-    minOrderAmount: paisasToRupees(num(raw, 'min_order_amount', 0)),
-    giftWrapPrice: paisasToRupees(num(raw, 'gift_wrap_price', 9900)),
+    codFee: paisasToRupees(num(raw, 'cod_fee', CONFIG_FALLBACK.cod_fee)),
+    minOrderAmount: paisasToRupees(num(raw, 'min_order_amount', CONFIG_FALLBACK.min_order_amount)),
+    giftWrapPrice: paisasToRupees(num(raw, 'gift_wrap_price', CONFIG_FALLBACK.gift_wrap_price)),
     // A percentage, not money — must not go through paisasToRupees.
-    taxPercentage: num(raw, 'tax_percentage', 0),
+    taxPercentage: num(raw, 'tax_percentage', CONFIG_FALLBACK.tax_percentage),
     guestCheckoutEnabled: bool(raw, 'guest_checkout_enabled', true),
 
-    currency: str(raw, 'currency', 'PKR'),
-    currencySymbol: str(raw, 'currency_symbol', '₨'),
+    currency: str(raw, 'currency', CONFIG_FALLBACK.currency),
+    currencySymbol: str(raw, 'currency_symbol', CONFIG_FALLBACK.currency_symbol),
 
     codEnabled: bool(raw, 'cod_enabled', true),
     onlinePaymentEnabled: bool(raw, 'online_payment_enabled', false),
     walletPaymentEnabled: bool(raw, 'wallet_payment_enabled', false),
 
-    storeName: str(raw, 'store_name', 'Yala Haji'),
-    storeEmail: str(raw, 'store_email', 'salam@yalahaji.com'),
-    storePhone: str(raw, 'store_phone', '+923001234567'),
+    storeName: str(raw, 'store_name', CONFIG_FALLBACK.store_name),
+    storeEmail: str(raw, 'store_email', CONFIG_FALLBACK.store_email),
+    storePhone: str(raw, 'store_phone', CONFIG_FALLBACK.store_phone),
 
     maintenanceMode: bool(raw, 'maintenance_mode', false),
     couponEnabled: bool(raw, 'coupon_enabled', true),
   }
 }
+
+/**
+ * What the storefront uses when `/settings/public` cannot be reached at all.
+ *
+ * Derived by adapting an empty payload rather than written out by hand, so
+ * there is exactly one place a default lives. The previous hand-written copy
+ * of this object stated the same numbers a second time in rupees, which is
+ * two places for them to drift — and drift is the whole reason this file
+ * carries the warning above.
+ */
+export const SETTINGS_FALLBACK: StoreSettings = adaptSettings({})

@@ -6,6 +6,7 @@ import {
   adaptSettings,
   fromBlogCategory,
   toBlogCategory,
+  SETTINGS_FALLBACK,
 } from './adapters'
 import type { StoreSettings } from './adapters'
 import type { Paginated, WireCategory, WireReview, WireBlogPost, WirePublicSettings } from './wire'
@@ -170,44 +171,15 @@ export async function fetchBlogPostsByCategory(
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
 /**
- * Used when `/settings/public` cannot be reached.
- *
- * These mirror the seeded values in `apps/api/src/settings/config-catalogue.ts`
- * — deliberately, so an unreachable settings endpoint degrades toward what the
- * server will actually charge against rather than toward a number the
- * storefront invented. The storefront once hardcoded a ₨5,000 free-shipping
- * threshold while the API used ₨2,999, so the progress bar and the invoice
- * disagreed.
+ * Re-exported so callers have one import for "the settings", but **defined in
+ * `adapters.ts`** — see `SETTINGS_FALLBACK` there for why it is derived rather
+ * than written out.
  *
  * Feature flags fail *open* for things that merely display (coupons, guest
  * checkout) and *closed* for anything that would imply we can take money we
  * cannot (online and wallet payment).
  */
-export const SETTINGS_FALLBACK: StoreSettings = {
-  freeShippingThreshold: 2999,
-  standardShippingCost: 299,
-  expressShippingCost: 499,
-
-  codFee: 0,
-  minOrderAmount: 0,
-  giftWrapPrice: 99,
-  taxPercentage: 0,
-  guestCheckoutEnabled: true,
-
-  currency: 'PKR',
-  currencySymbol: '₨',
-
-  codEnabled: true,
-  onlinePaymentEnabled: false,
-  walletPaymentEnabled: false,
-
-  storeName: 'Yala Haji',
-  storeEmail: 'salam@yalahaji.com',
-  storePhone: '+923001234567',
-
-  maintenanceMode: false,
-  couponEnabled: true,
-}
+export { SETTINGS_FALLBACK }
 
 export async function fetchSettings(): Promise<StoreSettings> {
   const wire = await apiFetchSafe<WirePublicSettings | null>('/settings/public', null, {

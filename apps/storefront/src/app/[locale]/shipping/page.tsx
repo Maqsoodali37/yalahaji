@@ -6,7 +6,8 @@ import {
   PolicyList,
   PolicyNote,
 } from '@/components/layout/policy-page'
-import { FREE_SHIPPING_THRESHOLD, formatPrice } from '@/lib/utils'
+import { formatPrice } from '@/lib/utils'
+import { fetchSettings } from '@/lib/api'
 
 export const metadata: Metadata = {
   title: 'Shipping Policy',
@@ -16,7 +17,15 @@ export const metadata: Metadata = {
 
 export default async function ShippingPage() {
   const locale = await getLocale()
-  const threshold = formatPrice(FREE_SHIPPING_THRESHOLD)
+
+  // A shipping policy quoting a threshold the checkout does not use is the
+  // worst version of this bug — it is the page a customer is sent to when they
+  // query the charge. `fetchSettings` is revalidated every 60s, so this is a
+  // cached read, not a round trip per visit.
+  const settings = await fetchSettings()
+  const threshold = formatPrice(settings.freeShippingThreshold)
+  const standard = formatPrice(settings.standardShippingCost)
+  const express = formatPrice(settings.expressShippingCost)
 
   return (
     <PolicyPage
@@ -44,7 +53,7 @@ export default async function ShippingPage() {
               </tr>
               <tr>
                 <td className="px-4 py-3">Below {threshold}</td>
-                <td className="px-4 py-3 font-semibold text-ink">₨299</td>
+                <td className="px-4 py-3 font-semibold text-ink">{standard}</td>
               </tr>
             </tbody>
           </table>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useLocale } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import {
   ShoppingCart, Heart, BarChart2, Share2, Gift, ChevronRight,
   Minus, Plus, Star, CheckCircle, AlertCircle, Clock,
@@ -12,6 +12,7 @@ import type { Product, ProductVariant, Review } from '@/types'
 import { ProductImage } from '@/components/ui/product-image'
 import { useCartStore } from '@/store/cart'
 import { useWishlistToggle } from '@/lib/use-wishlist-toggle'
+import { useShopSettings, useFreeShippingThreshold } from '@/lib/use-shop-settings'
 import {
   formatPrice, formatDiscount, getTierBadgeClass, getTierTextClass, getDefaultVariant, cn
 } from '@/lib/utils'
@@ -49,6 +50,10 @@ export function ProductDetailClient({ product, reviews, relatedProducts }: Props
   const openCart = useCartStore((s) => s.openCart)
   const { isInWishlist, onToggle: toggleWishlist, requiresSignIn } = useWishlistToggle()
   const inWishlist = isInWishlist(product.id)
+
+  const tProduct = useTranslations('product')
+  const settings = useShopSettings()
+  const freeShipping = useFreeShippingThreshold()
 
   // One view_item per variant the visitor lands on or switches to. Keyed on
   // the variant id rather than the product so tier and size selections show up
@@ -505,7 +510,12 @@ export function ProductDetailClient({ product, reviews, relatedProducts }: Props
                     className="w-4 h-4 rounded text-gold border-gold focus:ring-gold"
                   />
                   <Gift className="w-4 h-4 text-gold-deep" />
-                  <span className="text-sm font-semibold text-ink">Add Gift Wrap (+₨99)</span>
+                  {/* Same class of bug as the shipping threshold: this read
+                      "+₨99" while `gift_wrap_price` decided what the order
+                      was actually charged. */}
+                  <span className="text-sm font-semibold text-ink">
+                    Add Gift Wrap (+{formatPrice(settings.giftWrapPrice)})
+                  </span>
                 </label>
                 {giftWrap && (
                   <textarea
@@ -543,7 +553,11 @@ export function ProductDetailClient({ product, reviews, relatedProducts }: Props
             {/* Trust badges */}
             <div className="grid grid-cols-3 gap-2 mt-5 pt-4 border-t border-line">
               {[
-                { icon: '🚚', label: 'Free Shipping', sub: 'Over ₨2,999' },
+                {
+                  icon: '🚚',
+                  label: tProduct('freeShippingBadge'),
+                  sub: tProduct('freeShippingOver', { amount: freeShipping.formatted }),
+                },
                 { icon: '↩️', label: '7-Day Returns', sub: 'Hassle-free' },
                 { icon: '🔒', label: 'Secure Payment', sub: 'JazzCash · COD' },
               ].map((badge) => (
@@ -631,7 +645,15 @@ export function ProductDetailClient({ product, reviews, relatedProducts }: Props
               <div className="space-y-4 text-sm text-ink-2">
                 <div>
                   <h4 className="font-semibold text-ink mb-1">Shipping</h4>
-                  <p>Free shipping on all orders over ₨2,999. Standard delivery takes 3–5 business days. Express delivery (1–2 days) available for ₨299.</p>
+                  {/* Both figures come from shop config — the express cost was
+                      hardcoded here too, and would have gone stale the same
+                      way the threshold did. */}
+                  <p>
+                    {tProduct('shippingDetail', {
+                      amount: freeShipping.formatted,
+                      express: formatPrice(settings.expressShippingCost),
+                    })}
+                  </p>
                 </div>
                 <div>
                   <h4 className="font-semibold text-ink mb-1">Returns</h4>

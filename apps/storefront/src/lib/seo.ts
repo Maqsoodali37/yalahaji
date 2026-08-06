@@ -57,10 +57,20 @@ export const TITLES: Record<Locale, string> = {
  * Meta descriptions. Kept in the 140–160 character range so Google shows them
  * whole, front-loaded with what the shop sells and closing on the two things
  * Pakistani buyers filter on: cash on delivery and free shipping.
+ *
+ * **The threshold is deliberately not stated here.** These are module-level
+ * constants baked in at build time, so a figure written into them could not
+ * follow the value an admin sets — and a meta description is exactly where a
+ * stale number does the most damage, because it is what a customer reads in
+ * search results before they ever reach a page that could correct it. The en
+ * and ur copy previously promised "free shipping over ₨2,999" from here.
+ *
+ * If the threshold should appear in metadata, `generateMetadata` in
+ * `app/[locale]/layout.tsx` can `await fetchSettings()` and compose it there.
  */
 export const DESCRIPTIONS: Record<Locale, string> = {
-  en: 'Shop authentic Hajj & Umrah essentials in Pakistan — complete kits, ihram, abayas, attar and prayer accessories. Cash on Delivery, free shipping over ₨2,999.',
-  ur: 'پاکستان میں حج و عمرہ کا اصل سامان خریدیں — مکمل کٹس، احرام، عبایا، عطر، تسبیح اور نماز کا سامان۔ کیش آن ڈیلیوری، ₨2,999 سے زائد پر مفت ڈیلیوری۔',
+  en: 'Shop authentic Hajj & Umrah essentials in Pakistan — complete kits, ihram, abayas, attar and prayer accessories. Cash on Delivery and free shipping available.',
+  ur: 'پاکستان میں حج و عمرہ کا اصل سامان خریدیں — مکمل کٹس، احرام، عبایا، عطر، تسبیح اور نماز کا سامان۔ کیش آن ڈیلیوری اور مفت ڈیلیوری دستیاب۔',
   ar: 'تسوق مستلزمات الحج والعمرة الأصلية في باكستان — أطقم كاملة، إحرام، عبايات، عطور، مسابح ومستلزمات الصلاة. الدفع عند الاستلام وشحن مجاني.',
 }
 

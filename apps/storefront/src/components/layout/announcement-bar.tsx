@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl'
 import { Truck, ShieldCheck, RotateCcw } from 'lucide-react'
+import { useFreeShippingThreshold } from '@/lib/use-shop-settings'
 
 const items = [
   { icon: Truck,        key: 'freeShipping' },
@@ -11,6 +12,10 @@ const items = [
 
 export function AnnouncementBar() {
   const t = useTranslations('announce')
+  // This bar sits on every page and used to state ₨5,000 from a baked-in
+  // message while the API charged against ₨2,999 — the most visible half of
+  // the mismatch.
+  const { formatted } = useFreeShippingThreshold()
   return (
     <div className="bg-green-dark text-white text-[11px] sm:text-xs font-medium">
       <div className="container-max flex items-center justify-center gap-3 sm:gap-6 min-h-9 py-2 flex-wrap text-center">
@@ -26,7 +31,9 @@ export function AnnouncementBar() {
               This also drops a dangerouslySetInnerHTML that was injecting
               translation strings straight into the DOM.
             */}
-            <span>{t.rich(item.key, { b: (chunks) => <b>{chunks}</b> })}</span>
+            <span>
+              {t.rich(item.key, { b: (chunks) => <b>{chunks}</b>, amount: formatted })}
+            </span>
           </span>
         ))}
       </div>

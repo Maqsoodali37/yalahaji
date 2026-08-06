@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Package, Archive, Pencil } from 'lucide-react'
+import { Plus, Search, Package, Archive, Pencil, ImageOff } from 'lucide-react'
 import { useProducts, useArchiveProduct, useCategories, type ProductFilters } from '@/hooks/use-products'
 import { RequireRole } from '@/components/layout/auth-gate'
 import { Panel, PageHeader, Badge, EmptyState, TableSkeleton, ErrorState } from '@/components/ui/panel'
@@ -16,6 +16,38 @@ import { formatPrice, lowestPrice, totalStock, stockLevel, formatDate } from '@/
 import type { Product } from '@/types'
 
 const LIMIT = 20
+
+/**
+ * The photo the storefront will actually show for this product.
+ *
+ * Deliberately the primary rather than `images[0]`: the two differ whenever
+ * staff promote a photo without reordering the gallery, and a list that
+ * disagrees with the shop is worse than a list with no picture at all.
+ */
+function Thumbnail({ product }: { product: Product }) {
+  const image = product.images?.find((i) => i.isPrimary) ?? product.images?.[0]
+
+  if (!image) {
+    return (
+      <span
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded border border-line bg-paper"
+        title="No photo yet"
+      >
+        <ImageOff className="h-4 w-4 text-ink-3" aria-hidden />
+        <span className="sr-only">No photo</span>
+      </span>
+    )
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={image.url}
+      alt=""
+      className="h-10 w-10 shrink-0 rounded border border-line object-cover"
+    />
+  )
+}
 
 export default function ProductsPage() {
   return (
@@ -164,15 +196,20 @@ function ProductsList() {
                     return (
                       <tr key={product.id}>
                         <td>
-                          <Link
-                            href={`/products/${product.id}`}
-                            className="font-semibold text-ink hover:text-green"
-                          >
-                            {product.nameEn}
-                          </Link>
-                          <p className="text-[11px] text-ink-3 font-mono mt-0.5">
-                            {product.sku}
-                          </p>
+                          <div className="flex items-center gap-3">
+                            <Thumbnail product={product} />
+                            <div className="min-w-0">
+                              <Link
+                                href={`/products/${product.id}`}
+                                className="font-semibold text-ink hover:text-green"
+                              >
+                                {product.nameEn}
+                              </Link>
+                              <p className="text-[11px] text-ink-3 font-mono mt-0.5">
+                                {product.sku}
+                              </p>
+                            </div>
+                          </div>
                         </td>
                         <td className="text-ink-2">{product.category?.nameEn ?? '—'}</td>
                         <td className="tabular-nums text-ink-2">{product.variants.length}</td>
