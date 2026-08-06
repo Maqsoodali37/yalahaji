@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { useTranslations, useLocale } from 'next-intl'
-import { Phone, MapPin, MessageCircle, Instagram, Facebook, Youtube } from 'lucide-react'
+import { Phone, Mail, MapPin, MessageCircle, Instagram, Facebook, Youtube } from 'lucide-react'
+import { useCartStore } from '@/store/cart'
 import { SafeImage } from '@/components/ui/safe-image'
 import { SOCIAL, WHATSAPP_DISPLAY } from '@/lib/seo'
 import {
@@ -14,6 +15,11 @@ export function Footer() {
   const t = useTranslations('footer')
   const locale = useLocale()
   const year = new Date().getFullYear()
+
+  // The cart store already holds shop configuration and loads it once at
+  // bootstrap, so this reuses that rather than adding a second fetch.
+  const storePhone = useCartStore((s) => s.settings.storePhone)
+  const storeEmail = useCartStore((s) => s.settings.storeEmail)
 
   return (
     // Approved design: light paper background, border-top — NOT dark green
@@ -142,10 +148,25 @@ export function Footer() {
                   {WHATSAPP_DISPLAY}
                 </a>
               </li>
+              {/* Phone and email come from the `store_phone` / `store_email`
+                  config rather than being hardcoded, so changing the shop's
+                  contact details is an admin edit rather than a deploy. */}
               <li className="flex items-center gap-2.5">
                 <Phone className="w-4 h-4 text-gold-deep flex-shrink-0" />
-                <a href="tel:+923229876543" className="hover:text-gold-deep transition-colors">
-                  +92 322 9876543
+                <a
+                  href={`tel:${storePhone.replace(/\s/g, '')}`}
+                  className="hover:text-gold-deep transition-colors"
+                >
+                  {storePhone}
+                </a>
+              </li>
+              <li className="flex items-center gap-2.5">
+                <Mail className="w-4 h-4 text-gold-deep flex-shrink-0" />
+                <a
+                  href={`mailto:${storeEmail}`}
+                  className="hover:text-gold-deep transition-colors"
+                >
+                  {storeEmail}
                 </a>
               </li>
             </ul>

@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing'
 import { BadRequestException } from '@nestjs/common'
 import { OrdersService } from './orders.service'
 import { PrismaService } from '../prisma/prisma.service'
+import { SettingsService } from '../settings/settings.service'
 import { CreateOrderDto } from './dto/create-order.dto'
 
 /**
@@ -22,11 +23,25 @@ describe('OrdersService.create — request guards', () => {
     $transaction: jest.fn(),
   }
 
+  // Shop configuration, stubbed to the seeded defaults. Each test that cares
+  // about a specific config overrides the relevant call.
+  const settings = {
+    getNumber: jest.fn(async (_key: string, fallback: number) => fallback),
+    getBoolean: jest.fn(async (_key: string, fallback: boolean) => fallback),
+    getString: jest.fn(async (_key: string, fallback: string) => fallback),
+  }
+
   beforeEach(async () => {
     jest.clearAllMocks()
+    settings.getNumber.mockImplementation(async (_key, fallback) => fallback)
+    settings.getBoolean.mockImplementation(async (_key, fallback) => fallback)
 
     const moduleRef = await Test.createTestingModule({
-      providers: [OrdersService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        OrdersService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: SettingsService, useValue: settings },
+      ],
     }).compile()
 
     service = moduleRef.get(OrdersService)
@@ -100,6 +115,71 @@ describe('OrdersService.create — request guards', () => {
     const withAddressId = dto({ addressId: 'someone-elses-address', address: undefined })
 
     await expect(service.create(withAddressId, 'user-1')).rejects.toThrow(/Address not found/)
+  })
+
+  describe('shop configuration', () => {
+    it('blocks guest orders when guest checkout is switched off', async () => {
+      // The admin toggle has to actually stop guest orders, not just hide the
+      // option in checkout — otherwise the switch is decorative.
+      settings.getBoolean.mockImplementation(async (key, fallback) =>
+        key === 'guest_checkout_enabled' ? false : fallback,
+      )
+
+      await expect(
+        service.create(dto({ guestPhone: '+923001234567' }), undefined),
+      ).rejects.toThrow(/sign in or create an account/)
+    })
+
+    it('still allows signed-in orders when guest checkout is off', async () => {
+      settings.getBoolean.mockImplementation(async (key, fallback) =>
+        key === 'guest_checkout_enabled' ? false : fallback,
+      )
+      prisma.address.create.mockResolvedValue({ id: 'addr-1' })
+      prisma.productVariant.findUnique.mockResolvedValue(null)
+
+      await expect(service.create(dto(), 'user-1')).rejects.toThrow(/Variant v-1 not found/)
+    })
+
+    it('blocks cash on delivery when it is switched off', async () => {
+      settings.getBoolean.mockImplementation(async (key, fallback) =>
+        key === 'cod_enabled' ? false : fallback,
+      )
+
+      await expect(
+        service.create(dto({ paymentMethod: 'cod', guestPhone: '+923001234567' }), undefined),
+      ).rejects.toThrow(/not available at the moment/)
+    })
+
+    it('rejects an order below the configured minimum', async () => {
+      settings.getNumber.mockImplementation(async (key, fallback) =>
+        key === 'min_order_amount' ? 500000 : fallback,
+      )
+      prisma.address.create.mockResolvedValue({ id: 'addr-1' })
+      prisma.productVariant.findUnique.mockResolvedValue({
+        id: 'v-1',
+        productId: 'p-1',
+        sku: 'SKU-1',
+        tier: 'Standard',
+        price: 100000, // ₨1,000 — under the ₨5,000 minimum
+        stock: 10,
+        product: { nameEn: 'Attar', images: [] },
+      })
+
+      await expect(
+        service.create(dto({ guestPhone: '+923001234567' }), undefined),
+      ).rejects.toThrow(/at least ₨5,000/)
+    })
+
+    it('does not enforce a minimum when it is zero', async () => {
+      // 0 is the seeded default and means "no minimum" — it must not reject
+      // every order by comparing against itself.
+      prisma.address.create.mockResolvedValue({ id: 'addr-1' })
+      prisma.productVariant.findUnique.mockResolvedValue(null)
+
+      await expect(
+        service.create(dto({ guestPhone: '+923001234567' }), undefined),
+      ).rejects.toThrow(/Variant v-1 not found/)
+    })
   })
 })
 

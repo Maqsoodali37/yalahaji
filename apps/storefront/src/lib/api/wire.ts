@@ -268,11 +268,14 @@ export interface WireCouponValidation {
   message?: string
 }
 
-export interface WirePublicSettings {
-  /** paisas */
-  freeShippingThreshold: number
-  standardShippingCost: number
-  expressShippingCost: number
-  codFee: number
-  currency: string
-}
+/**
+ * `GET /settings/public` returns a flat `{ config_key: parsedValue }` map of
+ * every row flagged `is_public` — not a fixed object. Adding a config to the
+ * storefront is now an UPDATE on that row rather than a change to this type,
+ * so this is deliberately open-ended.
+ *
+ * Values arrive already coerced to the row's declared `value_type`, so a
+ * `number` config is a number here and not a numeric string.
+ */
+export type WirePublicSettings = Record<string, string | number | boolean | null>
+

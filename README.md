@@ -5,6 +5,18 @@ Tagline: *Your journey, our care.*
 
 ---
 
+## Start here
+
+| File | What it is |
+|---|---|
+| `CLAUDE.md` | Working agreement, loaded automatically by AI assistants. Short. |
+| `PROJECT_SPEC.md` | **The reference.** Architecture, conventions, business rules, decisions already made. Read before changing anything. |
+| `TASKS.md` | **The only task list.** Pending work, by priority. Completed tasks are deleted, not ticked. |
+
+`README.md` is the running history of *what was built and why*. `PROJECT_SPEC.md`
+is the current state of *how things work*. When they disagree, `PROJECT_SPEC.md`
+is authoritative.
+
 ## Contents
 
 | File | What it is |
@@ -366,6 +378,71 @@ never going to be on the parcel.
   fetched 50 posts and filtered in the browser, silently truncating anything
   past that window.
 
+### Shop configuration
+
+Key/value configuration in the **existing `settings` table** — not a second
+`shop_configurations` table. Order totals are already computed from these rows,
+so a parallel table would mean the values staff edit and the values customers
+are charged against could drift apart with nothing to signal it.
+
+Migration `20260806120000_shop_configuration` renames the columns to
+`config_key` / `config_value` and adds `value_type`, `category`, `description`,
+`is_public` and `created_at`, indexed on `is_public` and `category`.
+
+**Adding a config is an INSERT.** No schema change, no code change — that is
+the point of the design. `apps/api/src/settings/config-catalogue.ts` is a
+*seed list*, not a schema; it exists so a fresh install has sensible values and
+every shipped key carries a description.
+
+`is_public` replaces a hardcoded allowlist in `settings.service.ts`. It defaults
+to **false**, so a key staff add stays private until someone deliberately
+publishes it — which is what stops an innocently-named credential ending up in
+a public payload. Publishing a config to the storefront is now an UPDATE, not a
+deploy.
+
+| Endpoint | Access |
+|---|---|
+| `GET /settings/public` | Public — `{ config_key: parsedValue }` for `is_public` rows |
+| `GET /settings/admin?category=` | admin, manager |
+| `GET /settings/:key` | admin, manager |
+| `POST /settings` | admin, manager |
+| `PATCH /settings/:key` | admin, manager |
+| `DELETE /settings/:key` | **admin only** |
+
+Writes are narrower than the `STAFF_MANAGE` set used elsewhere: these rows
+decide what customers are charged. Delete is narrower still, because deleting a
+key the code reads falls back to a hardcoded default rather than erroring — the
+shop keeps running while quietly charging something nobody chose.
+
+**Caching.** Redis and `cache-manager` were already dependencies and in
+docker-compose, but nothing registered a cache module, so the container ran for
+nothing. `AppCacheModule` now wires it up and **falls back to in-memory rather
+than failing to boot** — a cache is an optimisation, and an API that refuses to
+start because Redis is down turns a degraded dependency into a full outage.
+Reads are cached for 5 minutes; writes invalidate the single key *and* the
+`config:public` / `config:all` aggregates, or an admin would see their own edit
+apparently do nothing.
+
+**Enforced server-side, not just in the UI.** `min_order_amount`,
+`guest_checkout_enabled` and `cod_enabled` are checked in `OrdersService.create`
+— an admin toggle that only hides something in checkout is decorative.
+`cod_fee` and `tax_percentage` are applied to the order total, and checkout
+mirrors the same calculation so the quoted figure matches what is charged.
+
+**Storefront.** `WirePublicSettings` is deliberately an open
+`Record<string, …>` rather than a fixed interface, so publishing a new config
+does not require changing a type. `adaptSettings` converts paisas to rupees at
+the boundary and tolerates missing or corrupt values — a shop that white-screens
+because someone typo'd a currency symbol is worse than one showing a stale
+default. Feature flags fail **open** for things that merely display (coupons,
+guest checkout) and **closed** for anything implying we can take money we
+cannot (online and wallet payment).
+
+`currency_symbol` feeds `formatPrice` through a module-level variable set at
+bootstrap, rather than being threaded through ~30 call sites. Safe here
+specifically because it is one global shop setting — not per-request or
+per-user state, so there is nothing to leak between requests on the server.
+
 ### Payment methods
 
 **Cash on Delivery is the only method that can be selected.** It is also the
@@ -427,14 +504,22 @@ when the catalogue simply had not loaded. Both now distinguish the two.
 
 ### Tests
 
-- API: `npm test` in `apps/api` (Jest, 25 specs) — order guards, returns window
-  and status rules, kit-category resolution.
-- Storefront: `npm test` in `apps/storefront` (Vitest, 18 specs) — validation
-  rules and the shared address rule set.
+- API: `npm test` in `apps/api` (Jest, 46 specs) — order guards and
+  config-driven rules, returns window and status rules, kit-category
+  resolution, config type coercion and cache invalidation.
+- Storefront: `npm test` in `apps/storefront` (Vitest, 32 specs) — validation
+  rules, the shared address rule set, default-variant selection, and shop
+  config adaptation.
 
 ⚠️ **Run `npx prisma migrate deploy`, `npx prisma generate` and
-`npm run prisma:seed`** — the kit-categories migration adds two tables and the
-seed populates the five kit builder steps.
+`npm run prisma:seed`** — the kit-categories migration adds two tables, the
+shop-configuration migration alters `settings`, and the seed populates the kit
+builder steps and any missing config rows.
+
+The config seed is **insert-only**: `update: {}` leaves existing rows untouched,
+so re-running it after staff have changed a shipping fee will not reset it. That
+also makes it safe to run against a live database after a deploy that
+introduces new configuration.
 
 ## API additions and fixes made during integration
 

@@ -374,20 +374,97 @@ export function adaptUser(u: WireUser): User {
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
+/**
+ * Shop configuration as the storefront uses it.
+ *
+ * Money is converted to **rupees** here, at the boundary — the API stores and
+ * returns paisas. This is the same reason the adapters layer exists at all: a
+ * component that divides by 100 itself is a component that will one day forget.
+ */
 export interface StoreSettings {
+  // Shipping
   freeShippingThreshold: number
   standardShippingCost: number
   expressShippingCost: number
+
+  // Checkout
   codFee: number
+  minOrderAmount: number
+  giftWrapPrice: number
+  taxPercentage: number
+  guestCheckoutEnabled: boolean
+
+  // Currency
   currency: string
+  currencySymbol: string
+
+  // Payment availability
+  codEnabled: boolean
+  onlinePaymentEnabled: boolean
+  walletPaymentEnabled: boolean
+
+  // Store
+  storeName: string
+  storeEmail: string
+  storePhone: string
+
+  // Features
+  maintenanceMode: boolean
+  couponEnabled: boolean
 }
 
-export function adaptSettings(s: WirePublicSettings): StoreSettings {
+type RawConfig = WirePublicSettings
+
+/**
+ * Readers that tolerate a missing or wrong-typed key.
+ *
+ * A config row can be deleted or edited to nonsense by staff at any time, and
+ * the storefront must keep rendering — a shop that white-screens because
+ * someone typo'd a currency symbol is worse than one showing a stale default.
+ */
+function num(raw: RawConfig, key: string, fallback: number): number {
+  const v = raw[key]
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function bool(raw: RawConfig, key: string, fallback: boolean): boolean {
+  const v = raw[key]
+  if (typeof v === 'boolean') return v
+  if (typeof v === 'string') return v === 'true' || v === '1'
+  return fallback
+}
+
+function str(raw: RawConfig, key: string, fallback: string): string {
+  const v = raw[key]
+  return typeof v === 'string' && v.trim() !== '' ? v : fallback
+}
+
+export function adaptSettings(raw: WirePublicSettings): StoreSettings {
   return {
-    freeShippingThreshold: paisasToRupees(s.freeShippingThreshold),
-    standardShippingCost: paisasToRupees(s.standardShippingCost),
-    expressShippingCost: paisasToRupees(s.expressShippingCost),
-    codFee: paisasToRupees(s.codFee),
-    currency: s.currency ?? '₨',
+    freeShippingThreshold: paisasToRupees(num(raw, 'free_shipping_threshold', 299900)),
+    standardShippingCost: paisasToRupees(num(raw, 'standard_shipping_cost', 29900)),
+    expressShippingCost: paisasToRupees(num(raw, 'express_shipping_cost', 49900)),
+
+    codFee: paisasToRupees(num(raw, 'cod_fee', 0)),
+    minOrderAmount: paisasToRupees(num(raw, 'min_order_amount', 0)),
+    giftWrapPrice: paisasToRupees(num(raw, 'gift_wrap_price', 9900)),
+    // A percentage, not money — must not go through paisasToRupees.
+    taxPercentage: num(raw, 'tax_percentage', 0),
+    guestCheckoutEnabled: bool(raw, 'guest_checkout_enabled', true),
+
+    currency: str(raw, 'currency', 'PKR'),
+    currencySymbol: str(raw, 'currency_symbol', '₨'),
+
+    codEnabled: bool(raw, 'cod_enabled', true),
+    onlinePaymentEnabled: bool(raw, 'online_payment_enabled', false),
+    walletPaymentEnabled: bool(raw, 'wallet_payment_enabled', false),
+
+    storeName: str(raw, 'store_name', 'Yala Haji'),
+    storeEmail: str(raw, 'store_email', 'salam@yalahaji.com'),
+    storePhone: str(raw, 'store_phone', '+923001234567'),
+
+    maintenanceMode: bool(raw, 'maintenance_mode', false),
+    couponEnabled: bool(raw, 'coupon_enabled', true),
   }
 }

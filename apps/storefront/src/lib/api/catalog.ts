@@ -170,23 +170,56 @@ export async function fetchBlogPostsByCategory(
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
 /**
- * Shipping thresholds and currency. Falls back to the API's own seeded
- * defaults (₨2,999 free-shipping threshold) rather than the storefront's old
- * hardcoded ₨5,000, so an unreachable settings endpoint degrades toward the
- * value the server will actually charge against.
+ * Used when `/settings/public` cannot be reached.
+ *
+ * These mirror the seeded values in `apps/api/src/settings/config-catalogue.ts`
+ * — deliberately, so an unreachable settings endpoint degrades toward what the
+ * server will actually charge against rather than toward a number the
+ * storefront invented. The storefront once hardcoded a ₨5,000 free-shipping
+ * threshold while the API used ₨2,999, so the progress bar and the invoice
+ * disagreed.
+ *
+ * Feature flags fail *open* for things that merely display (coupons, guest
+ * checkout) and *closed* for anything that would imply we can take money we
+ * cannot (online and wallet payment).
  */
 export const SETTINGS_FALLBACK: StoreSettings = {
   freeShippingThreshold: 2999,
   standardShippingCost: 299,
   expressShippingCost: 499,
+
   codFee: 0,
-  currency: '₨',
+  minOrderAmount: 0,
+  giftWrapPrice: 99,
+  taxPercentage: 0,
+  guestCheckoutEnabled: true,
+
+  currency: 'PKR',
+  currencySymbol: '₨',
+
+  codEnabled: true,
+  onlinePaymentEnabled: false,
+  walletPaymentEnabled: false,
+
+  storeName: 'Yala Haji',
+  storeEmail: 'salam@yalahaji.com',
+  storePhone: '+923001234567',
+
+  maintenanceMode: false,
+  couponEnabled: true,
 }
 
 export async function fetchSettings(): Promise<StoreSettings> {
   const wire = await apiFetchSafe<WirePublicSettings | null>('/settings/public', null, {
     anonymous: true,
-    next: { revalidate: 600 },
+    // Short enough that an admin editing a shipping fee sees it take effect
+    // without a redeploy; long enough that this is not a per-request round
+    // trip on every page.
+    next: { revalidate: 60 },
   })
-  return wire ? adaptSettings(wire) : SETTINGS_FALLBACK
+
+  // An empty object is a valid response shape but means nothing is published —
+  // treat it as unreachable rather than adopting every fallback silently.
+  if (!wire || Object.keys(wire).length === 0) return SETTINGS_FALLBACK
+  return adaptSettings(wire)
 }

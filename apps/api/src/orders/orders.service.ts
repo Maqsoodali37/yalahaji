@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
+import { SettingsService } from '../settings/settings.service'
 import { CreateOrderDto } from './dto/create-order.dto'
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto'
 import { OrderStatus, Prisma, Tier } from '@prisma/client'
@@ -20,9 +21,29 @@ const ORDER_INCLUDE = {
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
+  ) {}
 
   async create(dto: CreateOrderDto, userId?: string) {
+    // Feature flags are enforced here, not just in the checkout UI. Turning
+    // guest checkout off in the admin panel has to actually stop guest orders,
+    // otherwise the switch is decorative.
+    if (!userId) {
+      const guestCheckoutEnabled = await this.settings.getBoolean('guest_checkout_enabled', true)
+      if (!guestCheckoutEnabled) {
+        throw new BadRequestException('Please sign in or create an account to place an order.')
+      }
+    }
+
+    if (dto.paymentMethod === 'cod') {
+      const codEnabled = await this.settings.getBoolean('cod_enabled', true)
+      if (!codEnabled) {
+        throw new BadRequestException('Cash on delivery is not available at the moment.')
+      }
+    }
+
     // A guest has no account to be reached through, and `trackOrder` matches
     // on exactly these two fields — so an order placed without either is one
     // its own buyer can never look up and support cannot chase.
@@ -100,15 +121,42 @@ export class OrdersService {
       }
     }
 
-    // Shipping
-    const freeThreshold = await this.getSettingInt('free_shipping_threshold', 299900)
-    const stdShipping = await this.getSettingInt('standard_shipping_cost', 29900)
-    const expShipping = await this.getSettingInt('express_shipping_cost', 49900)
+    // Shop configuration. Read through SettingsService so these values are
+    // cached and come from the same source the storefront displays — the
+    // previous local `getSettingInt` hit the table directly on every checkout
+    // and duplicated the fallbacks.
+    const [freeThreshold, stdShipping, expShipping, codFee, minOrder, taxPercent] =
+      await Promise.all([
+        this.settings.getNumber('free_shipping_threshold', 299900),
+        this.settings.getNumber('standard_shipping_cost', 29900),
+        this.settings.getNumber('express_shipping_cost', 49900),
+        this.settings.getNumber('cod_fee', 0),
+        this.settings.getNumber('min_order_amount', 0),
+        this.settings.getNumber('tax_percentage', 0),
+      ])
+
     const afterDiscount = subtotal - discount
+
+    // Checked against the discounted subtotal, which is what the customer
+    // actually pays for goods. Enforced here and not only in the UI, since
+    // the minimum is a commercial rule rather than a form hint.
+    if (minOrder > 0 && afterDiscount < minOrder) {
+      throw new BadRequestException(
+        `Orders must total at least ${this.formatPaisas(minOrder)}. Please add a little more to your basket.`,
+      )
+    }
+
     const shippingCost = afterDiscount >= freeThreshold ? 0
       : dto.shippingMethod === 'express' ? expShipping : stdShipping
 
-    const total = afterDiscount + shippingCost
+    // Surcharge for handling cash. Zero by default, so this is inert until
+    // someone sets `cod_fee`.
+    const codSurcharge = dto.paymentMethod === 'cod' ? codFee : 0
+
+    // Applied to goods only, not to shipping or the COD surcharge.
+    const tax = taxPercent > 0 ? Math.round((afterDiscount * taxPercent) / 100) : 0
+
+    const total = afterDiscount + shippingCost + codSurcharge + tax
 
     // Create order in transaction.
     //
@@ -131,8 +179,12 @@ export class OrdersService {
           paymentMethod: dto.paymentMethod,
           shippingMethod: dto.shippingMethod ?? 'standard',
           subtotal,
-          shippingCost,
+          // The COD surcharge rides on shippingCost: it is a delivery-related
+          // charge and the column already exists, so no migration is needed to
+          // make it visible on the order.
+          shippingCost: shippingCost + codSurcharge,
           discount,
+          tax,
           total,
           couponId,
           notes: dto.notes,
@@ -398,8 +450,8 @@ export class OrdersService {
     return this.updateStatus(id, { status: OrderStatus.cancelled, note: 'Cancelled by customer' })
   }
 
-  private async getSettingInt(key: string, fallback: number) {
-    const s = await this.prisma.setting.findUnique({ where: { key } })
-    return s ? parseInt(s.value, 10) : fallback
+  /** Paisas → a readable rupee amount for customer-facing messages. */
+  private formatPaisas(paisas: number): string {
+    return `₨${Math.round(paisas / 100).toLocaleString('en-PK')}`
   }
 }

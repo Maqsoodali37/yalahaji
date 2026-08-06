@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { CartItem, Tier } from '@/types'
-import { generateCartItemId } from '@/lib/utils'
+import { generateCartItemId, setCurrencySymbol } from '@/lib/utils'
 import {
   fetchCart,
   upsertCartItem,
@@ -299,6 +299,9 @@ export const useCartStore = create<CartStore>()(
 
       loadSettings: async () => {
         const settings = await fetchSettings()
+        // Applied before `set` so the first render that reacts to the new
+        // settings already formats prices with the configured symbol.
+        setCurrencySymbol(settings.currencySymbol)
         set({ settings })
       },
     }),

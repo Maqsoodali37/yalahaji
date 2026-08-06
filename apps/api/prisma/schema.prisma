@@ -637,10 +637,48 @@ model BlogTag {
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
-model Setting {
-  key       String   @id
-  value     String   @db.Text
-  updatedAt DateTime @updatedAt
+enum ConfigValueType {
+  string
+  number
+  boolean
+  json
+}
 
+// Shop configuration — a key/value store, so adding a config is an INSERT
+// rather than a schema change.
+//
+// This is the pre-existing `settings` table with metadata added, not a second
+// config table. Order totals are computed from these rows
+// (`free_shipping_threshold`, `standard_shipping_cost`), so a parallel table
+// would mean the values staff edit and the values customers are charged
+// against could drift apart.
+//
+// `isPublic` is what makes the storefront endpoint safe. It previously relied
+// on a hardcoded allowlist in settings.service.ts, which meant any new
+// customer-facing config needed a code change — and any key an admin added
+// was invisible to that allowlist rather than deliberately withheld.
+model Setting {
+  key   String @id @map("config_key")
+  value String @db.Text @map("config_value")
+
+  /// How `value` should be coerced. Everything is stored as text; this says
+  /// what it means.
+  valueType ConfigValueType @default(string) @map("value_type")
+
+  /// Grouping for the admin UI (shipping, payment, store, inventory…).
+  category String @default("general")
+
+  /// Shown to staff in the admin panel so a key is not a guess.
+  description String? @db.Text
+
+  /// Exposed by GET /settings/public. Off by default: a new key is private
+  /// until someone deliberately publishes it.
+  isPublic Boolean @default(false) @map("is_public")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([isPublic])
+  @@index([category])
   @@map("settings")
 }

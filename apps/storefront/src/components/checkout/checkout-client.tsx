@@ -46,6 +46,7 @@ const SHIPPING_TIER = 'Standard'
 export function CheckoutClient() {
   const locale = useLocale()
   const items = useCartStore((s) => s.items)
+  const subtotal = useCartStore((s) => s.subtotal())
   const couponDiscount = useCartStore((s) => s.couponDiscount)
   const couponCode = useCartStore((s) => s.couponCode)
   const clearCart = useCartStore((s) => s.clearCart)
@@ -95,7 +96,20 @@ export function CheckoutClient() {
   // Shipping and total come from the store, which reads live settings — the
   // API recomputes both server-side anyway, so these are display-only.
   const shippingCost = useCartStore((s) => s.shipping())
-  const total = useCartStore((s) => s.total())
+  const goodsTotal = useCartStore((s) => s.total())
+  const settings = useCartStore((s) => s.settings)
+
+  // Mirrors the server's calculation in OrdersService.create. It has to: the
+  // API adds a COD surcharge and tax, and a checkout that showed a total
+  // without them would quote one figure and charge another — the same class of
+  // bug as the old ₨5,000-vs-₨2,999 shipping mismatch.
+  const codSurcharge = paymentMethod === 'cod' ? settings.codFee : 0
+  const subtotalAfterDiscount = Math.max(0, subtotal - couponDiscount)
+  const tax =
+    settings.taxPercentage > 0
+      ? Math.round((subtotalAfterDiscount * settings.taxPercentage) / 100)
+      : 0
+  const total = goodsTotal + codSurcharge + tax
 
   const stepIndex = (s: Step) => STEPS.findIndex((st) => st.key === s)
   const currentIndex = stepIndex(step)
@@ -169,6 +183,15 @@ export function CheckoutClient() {
 
     if (items.length === 0) {
       setPlaceError('Your basket is empty.')
+      return
+    }
+
+    // The API enforces this too. Checking here means the customer finds out
+    // before filling in an address rather than after submitting one.
+    if (settings.minOrderAmount > 0 && subtotalAfterDiscount < settings.minOrderAmount) {
+      setPlaceError(
+        `Orders must total at least ${formatPrice(settings.minOrderAmount)}. Please add a little more to your basket.`,
+      )
       return
     }
 
@@ -465,10 +488,13 @@ export function CheckoutClient() {
                   <h2 className="font-bold text-ink text-lg">Payment Method</h2>
 
                   {PAYMENT_OPTIONS.map((option) => {
-                    // Online payment is listed but not selectable — no gateway
-                    // is wired up, so an order placed against one would look
-                    // paid to the customer and unpaid to fulfilment.
-                    const disabled = Boolean(option.comingSoon)
+                    // Two independent gates. `comingSoon` means no gateway
+                    // exists — an order placed against one would look paid to
+                    // the customer and unpaid to fulfilment. The config flag
+                    // is the shop switching off a method that *does* work.
+                    const disabledByConfig =
+                      option.key === 'cod' ? !settings.codEnabled : false
+                    const disabled = Boolean(option.comingSoon) || disabledByConfig
                     const selected = paymentMethod === option.key
 
                     return (
@@ -641,6 +667,23 @@ export function CheckoutClient() {
                         {shippingCost === 0 ? 'Free' : formatPrice(shippingCost)}
                       </span>
                     </div>
+
+                    {/* Only rendered when configured, so a shop with no COD fee
+                        and no tax sees the same summary as before. */}
+                    {codSurcharge > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-stone">Cash on delivery fee</span>
+                        <span className="text-ink">{formatPrice(codSurcharge)}</span>
+                      </div>
+                    )}
+
+                    {tax > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-stone">Tax ({settings.taxPercentage}%)</span>
+                        <span className="text-ink">{formatPrice(tax)}</span>
+                      </div>
+                    )}
+
                     <div className="flex justify-between font-bold text-base border-t border-line pt-2">
                       <span>Total</span>
                       <span className="text-green">{formatPrice(total)}</span>

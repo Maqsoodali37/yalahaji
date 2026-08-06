@@ -32,6 +32,7 @@ export function CartPageClient() {
 
   // Threshold comes from the API now, not a constant that disagreed with it.
   const freeShippingThreshold = useCartStore((s) => s.settings.freeShippingThreshold)
+  const settings = useCartStore((s) => s.settings)
   const amountUntilFree = Math.max(0, freeShippingThreshold - subtotal)
 
   const { data: suggestedProducts = [] } = useQuery({
@@ -195,8 +196,19 @@ export function CartPageClient() {
             <div className="bg-paper border border-line rounded-md p-5 sticky top-24">
               <h3 className="font-bold text-ink mb-4">Order Summary</h3>
 
-              {/* Coupon */}
-              {!couponCode ? (
+              {/* Coupon — hidden entirely when `coupon_enabled` is off, so a
+                  shop running no promotions does not show a field that can
+                  only ever reject what a customer types into it. An applied
+                  coupon still renders, so turning the feature off mid-session
+                  cannot silently drop a discount already granted. */}
+              {!settings.couponEnabled && couponCode ? (
+                <div className="flex items-center justify-between bg-green-tint border border-green/10 rounded-sm px-3 py-2 mb-4">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Tag className="w-3.5 h-3.5 text-green" />
+                    <span className="font-semibold text-green">{couponCode}</span>
+                  </div>
+                </div>
+              ) : !settings.couponEnabled ? null : !couponCode ? (
                 <div className="mb-4">
                   <label className="text-xs font-semibold text-stone uppercase tracking-wider mb-1.5 block">
                     {t('couponCode')}

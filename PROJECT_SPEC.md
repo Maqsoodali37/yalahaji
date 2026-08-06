@@ -1,0 +1,315 @@
+# Project Specification
+
+Long-term reference for this codebase. **Read this before starting work** — it exists so the same code does not get re-reviewed every session.
+
+Keep it current: when a feature lands or an architectural decision is made, update this file in the same change.
+
+---
+
+## Project Overview
+
+### Business domain
+
+**Yala Haji** — Pakistani e-commerce for Hajj and Umrah pilgrims. Ihram, attar and fragrances, prayer accessories, abaya/hijab, dates and Zam Zam, plus pre-assembled kits and a build-your-own kit flow.
+
+Customers are largely Pakistan-based, mobile-first, and cash-on-delivery oriented. Content is trilingual: English, Urdu, Arabic.
+
+### Tech stack
+
+| Layer | Stack |
+|---|---|
+| API | NestJS, Prisma, MySQL 8, Redis |
+| Storefront | Next.js 15 (App Router), React 19, TanStack Query, Zustand, next-intl, Tailwind |
+| Admin | Next.js 15 (App Router), TanStack Query, Tailwind |
+| Infra | Docker Compose, nginx |
+| Tests | Jest (API), Vitest (storefront) |
+
+### Architecture
+
+Monorepo, three apps:
+
+```
+apps/api          NestJS REST API — the only thing that touches the database
+apps/storefront   Customer-facing Next.js app, [locale] routing
+apps/admin        Staff Next.js app
+```
+
+**Two separate trust domains.** Customer auth and admin auth deliberately share no transport, secret, or login endpoint:
+
+| | Customer | Admin |
+|---|---|---|
+| Transport | `Authorization: Bearer` | httpOnly cookie |
+| Guard | `JwtAuthGuard` | `AdminJwtAuthGuard` + `RolesGuard` |
+| Secret | `JWT_SECRET` | `ADMIN_JWT_SECRET` |
+| Login | `POST /auth/login` | `POST /auth/admin/login` |
+
+The API refuses to start in production if these secrets are placeholders or identical.
+
+`OptionalJwtAuthGuard` covers routes that serve both guests and signed-in customers (cart, order placement).
+
+Roles: `customer`, `admin`, `manager`, `support`, `fulfillment`. Grouped as `STAFF_MANAGE` and `STAFF_ORDERS` in `auth/roles.decorator.ts`.
+
+### Coding standards
+
+- TypeScript strict-ish: `strictNullChecks`, `noImplicitAny` on.
+- Comments explain **why**, not what. A comment restating the code is noise; a comment explaining a non-obvious constraint is the point.
+- No raw SQL anywhere. All database access goes through Prisma.
+- Money is integers, never floats.
+
+---
+
+## Critical conventions
+
+These are the ones that cause real bugs when broken.
+
+### Money is stored in paisas
+
+The API stores, computes and returns **paisas** (1 rupee = 100 paisas) everywhere. The storefront converts to **rupees at the adapter boundary** via `paisasToRupees` / `rupeesToPaisas` in `lib/api/adapters.ts`.
+
+A component that divides by 100 itself is a component that will one day forget. Never convert outside the adapter layer.
+
+Exception to watch: percentages (`tax_percentage`) are not money and must not go through `paisasToRupees`.
+
+### The storefront never imports from `lib/api/wire`
+
+`Wire*` types are the API's shape. Adapters exist to absorb the paisas/rupees and flat/nested differences. Components import only from `@/lib/api`. Letting `Wire*` escape that directory is what reintroduces the mismatches the layer was built to prevent.
+
+### Order totals are recomputed server-side
+
+Checkout sends only variant IDs and quantities. The API recomputes every price, discount, shipping cost, surcharge and tax from the database. Nothing the browser believes about the total can influence what is charged. **Preserve this.**
+
+The storefront mirrors the calculation for display only — and it must stay in sync, or checkout quotes one figure and charges another.
+
+### `apiFetch` vs `apiFetchSafe`
+
+- `apiFetchSafe(path, fallback, opts)` — public reads that must not fail a page render. Degrades to `fallback` when the API is unreachable or 404s.
+- `apiFetch(path, opts)` — anything the user initiated. A rejected submission must surface to the person who made it, not be swallowed.
+
+**Trap:** because `apiFetchSafe` never throws, TanStack Query's `isError` never fires for it. A failed fetch looks like an empty result. Screens driven by `apiFetchSafe` need to distinguish "genuinely empty" from "did not load" some other way — see the wishlist and compare pages.
+
+### Shop configuration lives in the `settings` table
+
+Key/value, with `value_type`, `category`, `description`, `is_public`. **Not** a separate `shop_configurations` table — order totals are computed from these rows, so a parallel table would let the values staff edit drift from the values customers are charged.
+
+Read config through `SettingsService.getNumber/getBoolean/getString`, never `prisma.setting` directly — that skips the cache and duplicates fallbacks.
+
+`config-catalogue.ts` is a **seed list, not a schema**. Adding a config is an INSERT; nothing in code needs to change.
+
+---
+
+## Features Implemented
+
+### Catalogue
+Products with tiered variants (Economy / Standard / Premium), multilingual names and descriptions, images, badges, tags, size guides, kit contents. Filtering, sorting, pagination, predictive search.
+
+**Default variant selection** is centralised in `getDefaultVariant()` (`lib/utils.ts`): cheapest in stock, falling back to cheapest overall. The product card, the product page and add-to-cart must all use it. They previously decided independently, and with the API returning variants unordered, a card could advertise ₨1,199, open at ₨4,999, and add ₨4,999 to the basket. The API now also returns variants `orderBy: { price: 'asc' }`.
+
+### Cart
+Guest carts keyed by `X-Session-Id`, issued by `POST /cart/session` — unsigned IDs are rejected, so a caller cannot invent one and read someone else's cart. Signing in merges the guest cart into the account's.
+
+### Checkout and orders
+Guest and authenticated checkout. Order numbers are `YH-<year>-<n>` from 1001, derived inside the transaction with retry on unique-constraint collision (a `count()+1` scheme produced duplicates under concurrent checkout and drifted across year boundaries).
+
+### Returns
+Customer-facing half complete: eligible orders, request creation, own-request listing. 7-day window from the recorded delivery timeline entry. Admin moderation queue is pending.
+
+### Reviews
+Submission requires a signed-in customer; reviews appear publicly only after moderation. Admin queue endpoint is pending.
+
+### Kit builder
+`KitCategory` + `KitCategorySource` — a kit step is a merchandising grouping that can draw on several catalogue categories at once, with its own ordering, icon and required flag. Deliberately not a `Category`.
+
+### Shop configuration
+Key/value config with Redis caching, typed reads, admin CRUD, and a public endpoint driven by `is_public`.
+
+### Also built
+Categories, coupons, blog with category filtering, wishlist, saved addresses, profile, stock notifications, media upload, admin products and orders.
+
+---
+
+## Business Rules
+
+### Guest checkout
+- Enabled by default, controlled by `guest_checkout_enabled` and **enforced server-side** — an admin toggle that only hides UI is decorative.
+- A guest order **must** carry a phone or email. `trackOrder` matches on exactly those fields, so an order without either could never be looked up by its own buyer.
+- Guest addresses are persisted with `userId = NULL` and exist only to be referenced by their order.
+
+### Authentication required for
+My Orders, Wishlist, Saved Addresses, Profile, Returns, review submission.
+
+### Orders
+- Minimum one line item; maximum 50; maximum 99 per line.
+- The same variant cannot appear twice — each line passes the per-line stock check while together exceeding stock.
+- `min_order_amount` checked against the discounted subtotal. `0` means no minimum.
+- Cancellable by the customer only while `pending` or `confirmed`.
+
+### Payments
+**Cash on Delivery is the only selectable method.** JazzCash, Easypaisa and card are shown greyed out as *Coming Soon* — no gateway exists, and offering them produced orders that looked paid to the customer and unpaid to fulfilment. **Bank transfer is not supported and not planned.**
+
+Enforced on both sides: `CreateOrderDto` validates with `@IsIn(ENABLED_PAYMENT_METHODS)`, not against the whole enum.
+
+The `PaymentMethod` enum and both TypeScript unions keep all five values deliberately — historical orders may hold a disabled method, and admin screens must still render them.
+
+### Shipping and pricing
+- Free above `free_shipping_threshold`; otherwise `standard_shipping_cost` or `express_shipping_cost`.
+- `cod_fee` is added for COD orders and rides on the `shippingCost` column.
+- `tax_percentage` applies to goods only, not shipping or the COD surcharge.
+
+### Returns
+- Delivered orders only, within 7 days of the delivery timeline entry.
+- One open request per order (`requested`, `approved`, `received` block a new one; `rejected` does not).
+
+### Configuration
+- `is_public` defaults to **false** — a new key is private until deliberately published. This is what stops an innocently-named credential reaching a public payload.
+- Missing or corrupt config falls back rather than erroring. A `free_shipping_threshold` coerced to `0` would silently make all shipping free.
+
+---
+
+## API Standards
+
+### Validation
+Global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, `transform`, `enableImplicitConversion`.
+
+Consequences to respect:
+
+- **A DTO must be a class with decorators.** An inline type literal (`@Body() body: { code: string }`) is erased at compile time, so the pipe validates nothing. This has bitten this codebase twice.
+- **`PartialType()`, never `Partial<>`.** The TypeScript utility is erased, leaving no metadata — whitelisting stops applying and every field passes through unchecked.
+- **`@IsString()` accepts `""`.** Required string fields need `@IsNotEmpty()` too. Blank recipient names and empty phone numbers reached the orders table this way.
+- Length caps on every free-text field, sized to the column.
+
+Shared constants live in `apps/api/src/common/validation.ts` and mirror `apps/storefront/src/lib/validation.ts`. **Change one, change both** — a storefront rule looser than the API's produces a rejection the customer was never warned about.
+
+### Responses
+Paginated endpoints return `{ items, meta: { total, page, limit, totalPages } }`.
+
+Errors are Nest's standard shape; the storefront's `extractMessage` flattens `message: string | string[]`.
+
+### Route ordering
+Static paths must be declared **before** parameterised ones. Nest matches in declaration order, so `@Get(':slug')` above `@Get('categories')` swallows it.
+
+### Authentication
+Every non-public route carries an explicit guard. Public routes are the deliberate exception and should be obvious: catalogue reads, `GET /settings/public`, `POST /orders/track/:number`, `POST /cart/session`.
+
+Ownership is enforced by scoping the query (`where: { id, userId }`), so a guessed ID from another account reads as 404 rather than confirming the resource exists.
+
+### Caching
+`AppCacheModule` — Redis, **falling back to in-memory rather than failing to boot**. A cache is an optimisation; refusing to start because Redis is down turns a degraded dependency into an outage.
+
+Cache access is wrapped so it can never be why a request fails. A write must invalidate the single key *and* any aggregate (`config:public`, `config:all`), or an admin sees their own edit apparently do nothing.
+
+---
+
+## UI/UX Standards
+
+### Forms
+`FormField` (`components/ui/form-field.tsx`) wires label, control and error together for screen readers and reserves the error line so layout does not jump between keystrokes.
+
+Validation pattern: errors appear on **first submit**, then live-validate as the user corrects. Show every failing field at once — walking someone through errors one at a time turns a five-field form into five round trips. Move focus to the first invalid field.
+
+Rules come from `lib/validation.ts`. `required` trims first: a field of spaces satisfies a browser's `required` attribute but is not an answer.
+
+### Loading, error and empty states
+Every API-backed view needs all four: pending, error (with retry), empty, and populated. Distinguish "empty" from "failed to load" — telling someone their wishlist is empty when the catalogue simply did not load suggests their saved items are gone.
+
+### Honesty
+No placeholder fallbacks that look like real data. Checkout once rendered `address.fullName || 'Muhammad Ali'`, so an empty form displayed a plausible delivery address. No dead controls — a button with no handler is worse than no button.
+
+### Internationalisation
+Three locales: `en`, `ur`, `ar`. All customer-facing strings go through next-intl.
+
+**Never cast a translation key** (`t('foo' as never)`). The cast defeats the type check, and next-intl returns the key path for a miss rather than `null` — so `?? 'fallback'` is dead code and the literal `cart.freeShipping` ships to customers. This has happened.
+
+RTL matters: use logical properties (`ms-`, `me-`, `start-`, `end-`), not `ml-`/`mr-`/`left-`/`right-`.
+
+---
+
+## Development Standards
+
+### Folder structure
+
+```
+apps/api/src/
+  <feature>/
+    <feature>.controller.ts
+    <feature>.service.ts
+    <feature>.module.ts
+    <feature>.service.spec.ts
+    dto/
+  common/          cross-cutting constants (validation, payment-methods)
+  auth/            guards, strategies, decorators
+  prisma/
+
+apps/storefront/src/
+  app/[locale]/    routes
+  components/      grouped by feature, plus ui/ for primitives
+  lib/             api/ (client, adapters, per-domain modules), utils, validation
+  store/           Zustand stores
+  i18n/messages/   en.json, ur.json, ar.json
+  data/            curated editorial content ONLY — not a mock-data folder
+```
+
+### Naming
+- Config keys: `lower_snake_case`, enforced by regex in the DTO. These are read by name across two frontends, and `freeShipping` vs `free_shipping` is a silent miss that falls through to a default instead of erroring.
+- Slugs: `lowercase-with-hyphens`, enforced by regex.
+- Prisma models PascalCase, tables `@@map`ped to snake_case plural.
+
+### Reusable components
+Before adding a form control, price display or state panel, check whether one exists. Storefront: `ui/form-field`, `ui/safe-image`, `ui/product-image`, `ui/page-loader`. Admin: `ui/{panel,field,button,toast,pagination,confirm-dialog,stat-card}` and `RequireRole`.
+
+### Tests
+- API: `npm test` in `apps/api` (Jest). Services are tested against a Prisma double that throws if the code reaches it when it should have failed a guard first.
+- Storefront: `npm test` in `apps/storefront` (Vitest). Pure logic — validation rules, adapters, variant selection.
+
+Test the business rule, not the implementation. Each test names the failure it prevents.
+
+### Migrations
+Hand-written SQL under `prisma/migrations/<timestamp>_<name>/migration.sql`, with a comment block explaining *why* the change is being made. Additions must be nullable or defaulted so existing rows survive. Backfill in the same migration when a new column changes behaviour.
+
+---
+
+## Important Decisions
+
+Recorded so they are not relitigated.
+
+### Shop config extends `settings`; no `shop_configurations` table
+A second config table would let the values staff edit drift from the values customers are charged against, with nothing to signal it. The existing table was extended with metadata columns instead.
+
+### `is_public` column, not a hardcoded allowlist
+The previous allowlist in `settings.service.ts` meant every new customer-facing config needed a code change, and any key an admin added was invisible to it rather than deliberately withheld.
+
+### Disabled payment methods stay in the enum
+Removing `bank_transfer` or `jazzcash` would need a migration that fails against any historical row holding it, and admin screens must still render those orders. Availability is controlled by the two `payment-methods.ts` allowlists, not by the enum.
+
+### Redis falls back to in-memory
+Availability beats cache coherence for this workload. The fallback is per-instance, so invalidation will not propagate across replicas — hence the warning log, which is the signal to fix Redis.
+
+### `getDefaultVariant` is the single definition of "which variant represents this product"
+Three surfaces previously decided independently and disagreed. Anything showing a product price must use it.
+
+### Testimonials remain static
+Curated marketing copy with signed-off wording that changes a few times a year, and no admin surface. `src/data/testimonials.ts` is editorial content, not a placeholder. The other six files in that directory were mock-data stand-ins and have been deleted.
+
+### The COD surcharge rides on `shippingCost`
+It is a delivery-related charge and the column already exists, so it needs no migration to become visible on the order.
+
+### Storefront and API validation are intentional mirrors
+Not duplication for its own sake: the storefront copy catches a bad value before a round trip, the API copy is what protects the database. Neither can be removed.
+
+---
+
+## Environment
+
+`.env` at the repo root, loaded by the API via `ConfigModule` (`envFilePath: '../../.env'`).
+
+Required: `DATABASE_URL`, `JWT_SECRET`, `ADMIN_JWT_SECRET` (must differ), `REDIS_HOST`, `REDIS_PORT`, `STOREFRONT_URL`, `ADMIN_URL`, `NEXT_PUBLIC_API_URL`, `INTERNAL_API_URL`.
+
+`NEXT_PUBLIC_API_URL` is inlined at build time and must be passed as a Docker **build arg**, not only as a runtime environment variable.
+
+After pulling schema changes:
+
+```bash
+cd apps/api
+npx prisma migrate deploy
+npx prisma generate
+npm run prisma:seed     # insert-only; never overwrites existing config
+```

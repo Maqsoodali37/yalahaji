@@ -6,7 +6,28 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatPrice(amount: number, currency = '₨') {
+/**
+ * Currency symbol, from the `currency_symbol` shop config.
+ *
+ * Module-level rather than threaded through ~30 `formatPrice` call sites.
+ * That is safe here specifically because this is one global shop setting, not
+ * per-request or per-user state — every visitor sees the same symbol, so there
+ * is nothing to leak between requests on the server.
+ *
+ * Seeded with the same default as `SETTINGS_FALLBACK`, so prices render
+ * correctly before the config has loaded and if it never does.
+ */
+let currencySymbol = '₨'
+
+export function setCurrencySymbol(symbol: string) {
+  if (symbol.trim()) currencySymbol = symbol
+}
+
+export function getCurrencySymbol() {
+  return currencySymbol
+}
+
+export function formatPrice(amount: number, currency = currencySymbol) {
   return `${currency}${amount.toLocaleString('en-PK')}`
 }
 

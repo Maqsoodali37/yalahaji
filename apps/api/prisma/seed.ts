@@ -1,5 +1,6 @@
 import { PrismaClient, Tier } from '@prisma/client'
 import * as bcrypt from 'bcryptjs'
+import { CONFIG_CATALOGUE } from '../src/settings/config-catalogue'
 
 const prisma = new PrismaClient()
 
@@ -245,35 +246,49 @@ async function main() {
   ])
   console.log('✅ Coupons seeded')
 
-  // ── Settings ──────────────────────────────────────────────────────────────
-  await Promise.all([
-    prisma.setting.upsert({
-      where: { key: 'free_shipping_threshold' },
-      update: {},
-      create: { key: 'free_shipping_threshold', value: '299900' }, // ₨2,999 in paisas
-    }),
-    prisma.setting.upsert({
-      where: { key: 'standard_shipping_cost' },
-      update: {},
-      create: { key: 'standard_shipping_cost', value: '29900' },
-    }),
-    prisma.setting.upsert({
-      where: { key: 'express_shipping_cost' },
-      update: {},
-      create: { key: 'express_shipping_cost', value: '49900' },
-    }),
-    prisma.setting.upsert({
-      where: { key: 'whatsapp_number' },
-      update: {},
-      create: { key: 'whatsapp_number', value: '+923001234567' },
-    }),
-    prisma.setting.upsert({
-      where: { key: 'gift_wrap_price' },
-      update: {},
-      create: { key: 'gift_wrap_price', value: '9900' },
-    }),
-  ])
-  console.log('✅ Settings seeded')
+  // ── Shop configuration ────────────────────────────────────────────────────
+  //
+  // Insert-only. `update: {}` on an upsert leaves an existing row completely
+  // alone, so re-running the seed after staff have changed a shipping fee in
+  // the admin panel will not quietly reset it. Only genuinely missing keys are
+  // added, which is also what makes this safe to run on an existing database
+  // after a deploy that introduces new configuration.
+  let configsAdded = 0
+  for (const def of CONFIG_CATALOGUE) {
+    const existing = await prisma.setting.findUnique({ where: { key: def.key } })
+    if (existing) continue
+
+    await prisma.setting.create({
+      data: {
+        key: def.key,
+        value: def.value,
+        valueType: def.valueType,
+        category: def.category,
+        description: def.description,
+        isPublic: def.isPublic,
+      },
+    })
+    configsAdded++
+  }
+
+  // Not in the catalogue: an internal notification number rather than shop
+  // configuration, but it lives in the same table and needs its metadata set.
+  await prisma.setting.upsert({
+    where: { key: 'whatsapp_number' },
+    update: {},
+    create: {
+      key: 'whatsapp_number',
+      value: '+923001234567',
+      valueType: 'string',
+      category: 'store',
+      description: 'WhatsApp number used for order notifications',
+      isPublic: false,
+    },
+  })
+
+  console.log(
+    `✅ Shop configuration: ${configsAdded} added, ${CONFIG_CATALOGUE.length - configsAdded} already present`,
+  )
 
   // ── Kit builder steps ─────────────────────────────────────────────────────
   //
