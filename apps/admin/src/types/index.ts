@@ -358,3 +358,48 @@ export interface CatalogueStats {
 export interface LowStockVariant extends ProductVariant {
   product: { id: string; slug: string; nameEn: string }
 }
+
+// ─── Store settings ─────────────────────────────────────────────
+
+export type ConfigValueType = 'string' | 'number' | 'boolean' | 'json'
+
+/**
+ * A row from the `settings` table. `value` is always the raw string as
+ * stored — `valueType` says how to read it. Mirrors `Setting` in
+ * apps/api/prisma/schema.prisma.
+ */
+export interface Setting {
+  key: string
+  value: string
+  valueType: ConfigValueType
+  category: string
+  description: string | null
+  isPublic: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SettingInput {
+  key: string
+  value: string
+  valueType: ConfigValueType
+  category?: string
+  description?: string
+  isPublic?: boolean
+}
+
+// ─── Audit log ───────────────────────────────────────────────────
+
+export interface AuditLogEntry {
+  id: string
+  actorId: string
+  actorName: string
+  actorRole: string
+  action: 'create' | 'update' | 'delete'
+  entityType: string
+  entityId: string
+  before: unknown
+  after: unknown
+  ipAddress: string | null
+  createdAt: string
+}
