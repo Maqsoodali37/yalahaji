@@ -17,7 +17,13 @@ export interface ReorderItem {
   order: number
 }
 
-interface BulkSkip {
+// Exported (not just used internally) because it's part of `bulkAction`'s
+// inferred return type, which `CategoriesController.bulk` re-exposes as its
+// own public return type — `nest build`'s declaration-emit type-checking
+// rejects a public method whose return type references an unexported name
+// (TS4053), even though nothing outside this module constructs a `BulkSkip`
+// directly.
+export interface BulkSkip {
   id: string
   name: string
   reason: string

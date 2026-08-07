@@ -53,17 +53,21 @@ The 404 work is implemented and typechecks, but no HTTP status could be observed
 
 Then check the two error paths are still distinct: stop the API and confirm `/en/products/<a real slug>` renders `error.tsx`, **not** the 404 page.
 
-### `GET /categories` still lists disabled categories
+### Admin panel — 5 pages are still `ComingSoon` stubs
 
-`findBySlug` now excludes `isActive: false`, so a disabled category 404s. `findAll` does not filter, so the storefront nav and filter sidebar can still link to one — a dead link that correctly 404s but should never have been offered.
+`apps/admin/src/app/(dashboard)/`: `analytics`, `blog`, `coupons`, `customers`, `reviews`. (`categories` and `settings` are done — see below and the Store Settings task above.)
 
-Not fixed with `findBySlug` because the same endpoint is what the (unbuilt) admin categories screen will list from, and staff need to see disabled rows. Decide that first: either filter `findAll` and give admin its own listing, or pass an `includeInactive` flag.
+Backends already exist for blog, coupons and customers — those three are pure UI work following the established Products/Orders pattern (`hooks/use-*.ts`, `components/ui/{panel,field,button,toast,pagination,confirm-dialog}`, `RequireRole`).
 
-### Admin panel — 6 pages are still `ComingSoon` stubs
+### Verify the categories admin build on real hardware
 
-`apps/admin/src/app/(dashboard)/`: `analytics`, `blog`, `categories`, `coupons`, `customers`, `reviews`.
+The categories admin module (tree view, drag-and-drop, bulk actions, SEO/translation tabs) and its API fixes (soft delete, circular-hierarchy guard, unbounded tree depth, slug-clash-on-rename, the old `GET /categories` listing disabled rows) were built and manually reviewed line-by-line, but `npm install` could not complete in that session's sandbox even in a copy outside the FUSE mount — the npm registry returned intermittent `403`s and installs hung partway through. **A real Docker build (`Dockerfile`/`Dockerfile.admin`) already caught two real type errors this review missed**: an unexported `BulkSkip` interface reachable from a public controller method (`nest build`'s declaration-emit check, TS4053), and a `types/index.ts` `Category` type that briefly lost its `isActive` field to a working-tree race with concurrent edits (see note below) — both fixed. Re-run `npx tsc --noEmit` and `npm test -- categories` in `apps/api`, and `npx tsc --noEmit` in `apps/admin`, to catch anything else, and run `npx prisma migrate deploy` to apply `20260806180000_category_admin_fields` (it runs after `20260806170000_audit_log`, no conflict).
 
-Backends already exist for blog, categories, coupons and customers — those four are pure UI work following the established Products/Orders pattern (`hooks/use-*.ts`, `components/ui/{panel,field,button,toast,pagination,confirm-dialog}`, `RequireRole`).
+**Note on the race:** this task and the Store Settings work above were built in two concurrent sessions against the same working directory; one session's `git add -A && git commit` fired while the other's file writes were still in flight, so the commit (`349c607`) caught some files mid-edit. Running two agents against one uncommitted working tree at once is what caused it — worth avoiding, or committing more often, next time both are in flight together.
+
+### Product form's category picker only lists root-level categories
+
+`apps/admin/src/components/products/product-form.tsx` renders `categories.data?.map((c) => <option>...)` — a flat map over the top-level tree array, so a product can only be filed directly under a root category, never a subcategory. This predates the categories admin module (the old `findAll()` returned the same root-plus-nested-children shape); it's more visible now that the tree UI supports unlimited depth end-to-end. Fix by flattening the tree with indentation, the same way `category-form-dialog.tsx`'s parent picker already does (`flattenForPicker`).
 
 ### Reviews moderation queue
 

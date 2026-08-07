@@ -145,6 +145,17 @@ Products with tiered variants (Economy / Standard / Premium), multilingual names
 
 **Default variant selection** is centralised in `getDefaultVariant()` (`lib/utils.ts`): cheapest in stock, falling back to cheapest overall. The product card, the product page and add-to-cart must all use it. They previously decided independently, and with the API returning variants unordered, a card could advertise ₨1,199, open at ₨4,999, and add ₨4,999 to the basket. The API now also returns variants `orderBy: { price: 'asc' }`.
 
+### Category management
+Unlimited-depth category tree (parent/child via a self-relation, no depth cap enforced anywhere — `findAll`/`findAllAdmin` fetch flat and group by `parentId` in memory rather than nesting Prisma `include`s, which silently truncated past two levels). Per-category tree thumbnail and a separate wide banner image (for the shop category page header), featured flag, per-locale SEO title/description mirroring the existing `nameEn/Ur/Ar` flat-column convention rather than a translation table.
+
+The admin screen (`apps/admin/src/app/(dashboard)/categories`) is a single tree view: native HTML5 drag-and-drop for reparenting and reordering (optimistic update, rollback on failure, blocked-drop feedback while dragging over a node's own subtree), search/status/featured filtering that keeps a matching row's ancestors visible, and bulk enable/disable/delete. `GET /categories` (public, active-only) and `GET /categories/admin/tree` (guarded, every status plus a product count) are deliberately separate endpoints rather than one route with an `includeInactive` flag — the public route carries no guard, so a flag would let anyone crawl categories staff have deliberately hidden, the same reasoning behind `/products/admin/list`.
+
+**Soft delete, not a real row delete.** `DELETE /categories/:id` sets `isActive: false` (mirroring `ProductsService.remove`) and refuses with a 409 while the category still has subcategories or assigned products — `Product.categoryId` and the parent self-relation both default to Prisma's `RESTRICT`, so a real delete would previously have thrown a raw foreign-key 500, and a category with children but no products would have hit that same `RESTRICT` while `KitCategorySource.categoryId` (which does cascade) silently dropped its link in the same statement.
+
+**Circular hierarchy is guarded server-side**, not just prevented by the drag-and-drop UI: `assertNotCircular` walks a proposed parent's chain up to the root before every parent change (`update`, `reorder`), rejecting a move that would nest a category inside its own descendant.
+
+Not built: reindexing category changes into a search index. No search index (Meilisearch or similar) exists anywhere in this codebase yet.
+
 ### Product media
 Staff upload photos from the product form (`components/products/media-manager.tsx`). Files go straight to MinIO via `POST /media/upload` on selection; only the returned URL is held in form state, so the product payload stays JSON.
 
@@ -197,7 +208,7 @@ Key/value config with Redis caching, typed reads, admin CRUD, and a public endpo
 `SettingsService.create/update/remove` are the first caller — `actor` (id, name, role, IP) is now a required parameter, resolved in `SettingsController` from `@CurrentUser()` and `req.ip`, and every write records a before/after snapshot. The admin Store Settings screen surfaces this per row and in aggregate via a "History" panel.
 
 ### Also built
-Categories, coupons, blog with category filtering, wishlist, saved addresses, profile, stock notifications, media upload, admin products and orders.
+Coupons, blog with category filtering, wishlist, saved addresses, profile, stock notifications, media upload, admin products and orders.
 
 ---
 

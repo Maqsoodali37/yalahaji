@@ -44,7 +44,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Returns', href: '/returns', icon: Undo2 },
       { label: 'Products', href: '/products', icon: Package, roles: MANAGE },
       { label: 'Inventory', href: '/inventory', icon: Boxes, roles: MANAGE },
-      { label: 'Categories', href: '/categories', icon: FolderTree, roles: MANAGE, comingSoon: true },
+      { label: 'Categories', href: '/categories', icon: FolderTree, roles: MANAGE },
       { label: 'Customers', href: '/customers', icon: Users, comingSoon: true },
     ],
   },

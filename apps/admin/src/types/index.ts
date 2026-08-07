@@ -64,10 +64,64 @@ export interface Category {
   id: string
   slug: string
   nameEn: string
-  nameUr?: string
-  nameAr?: string
-  parentId?: string | null
+  nameUr: string
+  nameAr: string
+  descEn?: string
+  descUr?: string
+  descAr?: string
+  image?: string | null
+  bannerImage?: string | null
+  parentId: string | null
+  order: number
+  featured: boolean
+  isActive: boolean
+  seoTitleEn?: string | null
+  seoTitleUr?: string | null
+  seoTitleAr?: string | null
+  seoDescEn?: string | null
+  seoDescUr?: string | null
+  seoDescAr?: string | null
+  createdAt?: string
+  updatedAt?: string
+  /** Only present on the admin tree (`GET /categories/admin/tree`). */
+  productCount?: number
   children?: Category[]
+}
+
+/** Payload for `POST /categories` and `PATCH /categories/:id`. */
+export interface CategoryInput {
+  slug: string
+  nameEn: string
+  nameUr: string
+  nameAr: string
+  descEn?: string
+  descUr?: string
+  descAr?: string
+  image?: string
+  bannerImage?: string
+  parentId?: string | null
+  order?: number
+  featured?: boolean
+  isActive?: boolean
+  seoTitleEn?: string
+  seoTitleUr?: string
+  seoTitleAr?: string
+  seoDescEn?: string
+  seoDescUr?: string
+  seoDescAr?: string
+}
+
+/** One row's new position after a drag-and-drop move — mirrors ReorderItemDto. */
+export interface ReorderCategoryItem {
+  id: string
+  parentId: string | null
+  order: number
+}
+
+export interface BulkCategoryResult {
+  requested: number
+  updated: number
+  skipped: { id: string; name: string; reason: string }[]
 }
 
 export interface ProductVariant {
@@ -303,49 +357,4 @@ export interface CatalogueStats {
 
 export interface LowStockVariant extends ProductVariant {
   product: { id: string; slug: string; nameEn: string }
-}
-
-// ─── Store settings ─────────────────────────────────────────────
-
-export type ConfigValueType = 'string' | 'number' | 'boolean' | 'json'
-
-/**
- * A row from the `settings` table. `value` is always the raw string as
- * stored — `valueType` says how to read it. Mirrors `Setting` in
- * apps/api/prisma/schema.prisma.
- */
-export interface Setting {
-  key: string
-  value: string
-  valueType: ConfigValueType
-  category: string
-  description: string | null
-  isPublic: boolean
-  createdAt: string
-  updatedAt: string
-}
-
-export interface SettingInput {
-  key: string
-  value: string
-  valueType: ConfigValueType
-  category?: string
-  description?: string
-  isPublic?: boolean
-}
-
-// ─── Audit log ───────────────────────────────────────────────────
-
-export interface AuditLogEntry {
-  id: string
-  actorId: string
-  actorName: string
-  actorRole: string
-  action: 'create' | 'update' | 'delete'
-  entityType: string
-  entityId: string
-  before: unknown
-  after: unknown
-  ipAddress: string | null
-  createdAt: string
 }

@@ -177,22 +177,37 @@ model Address {
 // ─── Category ─────────────────────────────────────────────────────────────────
 
 model Category {
-  id        String   @id @default(uuid())
-  slug      String   @unique
-  nameEn    String
-  nameUr    String
-  nameAr    String
-  descEn    String   @db.Text
-  descUr    String   @db.Text
-  descAr    String   @db.Text
-  image     String?
-  icon      String?
-  parentId  String?
-  order     Int      @default(0)
-  featured  Boolean  @default(false)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  nameEn      String
+  nameUr      String
+  nameAr      String
+  descEn      String   @db.Text
+  descUr      String   @db.Text
+  descAr      String   @db.Text
+  image       String?
+  /// Wide category header shown on the shop landing/category page. Separate
+  /// from `image` (the tree/card thumbnail) because the two are cropped for
+  /// very different aspect ratios — one image trying to serve both jobs is
+  /// how a banner ends up stretched or a thumbnail ends up cropped to a sliver.
+  bannerImage String?
+  icon        String?
+  parentId    String?
+  order       Int      @default(0)
+  featured    Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  // Per-locale SEO, mirroring the nameEn/Ur/Ar convention rather than a
+  // translation table. Replaces the old single `metaTitle`/`metaDesc` pair,
+  // which the categories DTO referenced but which never existed as columns
+  // here — sending them threw a Prisma "unknown argument" error at runtime.
+  seoTitleEn String?
+  seoTitleUr String?
+  seoTitleAr String?
+  seoDescEn  String?  @db.Text
+  seoDescUr  String?  @db.Text
+  seoDescAr  String?  @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   parent     Category?           @relation("CategoryTree", fields: [parentId], references: [id])
   children   Category[]          @relation("CategoryTree")
@@ -201,6 +216,7 @@ model Category {
 
   @@index([slug])
   @@index([parentId])
+  @@index([parentId, order])
   @@map("categories")
 }
 
