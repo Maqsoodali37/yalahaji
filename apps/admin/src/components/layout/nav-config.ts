@@ -10,6 +10,7 @@ import {
   Star,
   FileText,
   BarChart3,
+  Settings,
   type LucideIcon,
 } from 'lucide-react'
 import type { Role } from '@/types'
@@ -59,6 +60,14 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Insights',
     items: [
       { label: 'Analytics', href: '/analytics', icon: BarChart3, roles: MANAGE, comingSoon: true },
+    ],
+  },
+  {
+    label: 'Configuration',
+    items: [
+      // Same roles the API enforces (`admin`, `manager`) — a support/fulfilment
+      // account has no route here to begin with, not just a hidden one.
+      { label: 'Store Settings', href: '/settings', icon: Settings, roles: MANAGE },
     ],
   },
 ]

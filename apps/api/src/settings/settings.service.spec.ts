@@ -3,6 +3,9 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager'
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common'
 import { SettingsService } from './settings.service'
 import { PrismaService } from '../prisma/prisma.service'
+import { AuditLogService } from '../audit-log/audit-log.service'
+
+const ACTOR = { id: 'staff-1', name: 'Ayesha', role: 'admin', ip: '203.0.113.4' }
 
 function row(over: Partial<Record<string, unknown>> & { key: string; value: string }) {
   return {
@@ -38,15 +41,21 @@ describe('SettingsService', () => {
     del: jest.fn<Promise<void>, [string]>(),
   }
 
+  const auditLog = {
+    record: jest.fn<Promise<void>, [unknown]>(),
+  }
+
   beforeEach(async () => {
     jest.clearAllMocks()
     cache.get.mockResolvedValue(undefined)
+    auditLog.record.mockResolvedValue(undefined)
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         SettingsService,
         { provide: PrismaService, useValue: prisma },
         { provide: CACHE_MANAGER, useValue: cache },
+        { provide: AuditLogService, useValue: auditLog },
       ],
     }).compile()
 
@@ -144,7 +153,7 @@ describe('SettingsService', () => {
       prisma.setting.findUnique.mockResolvedValue(row({ key: 'currency', value: 'PKR' }))
 
       await expect(
-        service.create({ key: 'currency', value: 'USD', valueType: 'string' } as never),
+        service.create({ key: 'currency', value: 'USD', valueType: 'string' } as never, ACTOR),
       ).rejects.toBeInstanceOf(ConflictException)
     })
 
@@ -153,15 +162,15 @@ describe('SettingsService', () => {
       prisma.setting.findUnique.mockResolvedValue(null)
 
       await expect(
-        service.create({ key: 'tax_percentage', value: 'abc', valueType: 'number' } as never),
+        service.create({ key: 'tax_percentage', value: 'abc', valueType: 'number' } as never, ACTOR),
       ).rejects.toBeInstanceOf(BadRequestException)
 
       await expect(
-        service.create({ key: 'flag', value: 'yes', valueType: 'boolean' } as never),
+        service.create({ key: 'flag', value: 'yes', valueType: 'boolean' } as never, ACTOR),
       ).rejects.toBeInstanceOf(BadRequestException)
 
       await expect(
-        service.create({ key: 'banner', value: '{nope', valueType: 'json' } as never),
+        service.create({ key: 'banner', value: '{nope', valueType: 'json' } as never, ACTOR),
       ).rejects.toBeInstanceOf(BadRequestException)
     })
 
@@ -169,11 +178,39 @@ describe('SettingsService', () => {
       prisma.setting.findUnique.mockResolvedValue(null)
       prisma.setting.create.mockResolvedValue(row({ key: 'x', value: '1' }))
 
-      await service.create({ key: 'x', value: '1', valueType: 'number' } as never)
+      await service.create({ key: 'x', value: '1', valueType: 'number' } as never, ACTOR)
 
       expect(prisma.setting.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ isPublic: false }) }),
       )
+    })
+
+    it('records an audit entry with the created row and no "before" state', async () => {
+      prisma.setting.findUnique.mockResolvedValue(null)
+      const created = row({ key: 'x', value: '1' })
+      prisma.setting.create.mockResolvedValue(created)
+
+      await service.create({ key: 'x', value: '1', valueType: 'number' } as never, ACTOR)
+
+      expect(auditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actor: ACTOR,
+          action: 'create',
+          entityType: 'Setting',
+          entityId: 'x',
+          after: created,
+        }),
+      )
+    })
+
+    it('does not record an audit entry when the create is rejected', async () => {
+      prisma.setting.findUnique.mockResolvedValue(row({ key: 'currency', value: 'PKR' }))
+
+      await expect(
+        service.create({ key: 'currency', value: 'USD', valueType: 'string' } as never, ACTOR),
+      ).rejects.toBeInstanceOf(ConflictException)
+
+      expect(auditLog.record).not.toHaveBeenCalled()
     })
   })
 
@@ -183,15 +220,17 @@ describe('SettingsService', () => {
         row({ key: 'tax_percentage', value: '17', valueType: 'number' }),
       )
 
-      await expect(service.update('tax_percentage', { value: 'abc' })).rejects.toBeInstanceOf(
-        BadRequestException,
-      )
+      await expect(
+        service.update('tax_percentage', { value: 'abc' }, ACTOR),
+      ).rejects.toBeInstanceOf(BadRequestException)
     })
 
     it('404s on an unknown key', async () => {
       prisma.setting.findUnique.mockResolvedValue(null)
 
-      await expect(service.update('nope', { value: '1' })).rejects.toBeInstanceOf(NotFoundException)
+      await expect(service.update('nope', { value: '1' }, ACTOR)).rejects.toBeInstanceOf(
+        NotFoundException,
+      )
     })
 
     it('invalidates the aggregate caches, not just the single key', async () => {
@@ -199,11 +238,31 @@ describe('SettingsService', () => {
       prisma.setting.findUnique.mockResolvedValue(row({ key: 'currency_symbol', value: '₨' }))
       prisma.setting.update.mockResolvedValue(row({ key: 'currency_symbol', value: '$' }))
 
-      await service.update('currency_symbol', { value: '$' })
+      await service.update('currency_symbol', { value: '$' }, ACTOR)
 
       const deleted = cache.del.mock.calls.map((c) => c[0])
       expect(deleted).toEqual(
         expect.arrayContaining(['config:key:currency_symbol', 'config:public', 'config:all']),
+      )
+    })
+
+    it('records an audit entry carrying both the before and after state', async () => {
+      const before = row({ key: 'currency_symbol', value: '₨' })
+      const after = row({ key: 'currency_symbol', value: '$' })
+      prisma.setting.findUnique.mockResolvedValue(before)
+      prisma.setting.update.mockResolvedValue(after)
+
+      await service.update('currency_symbol', { value: '$' }, ACTOR)
+
+      expect(auditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actor: ACTOR,
+          action: 'update',
+          entityType: 'Setting',
+          entityId: 'currency_symbol',
+          before,
+          after,
+        }),
       )
     })
   })
@@ -212,8 +271,28 @@ describe('SettingsService', () => {
     it('404s on an unknown key', async () => {
       prisma.setting.findUnique.mockResolvedValue(null)
 
-      await expect(service.remove('nope')).rejects.toBeInstanceOf(NotFoundException)
+      await expect(service.remove('nope', ACTOR)).rejects.toBeInstanceOf(NotFoundException)
       expect(prisma.setting.delete).not.toHaveBeenCalled()
+      expect(auditLog.record).not.toHaveBeenCalled()
+    })
+
+    it('records an audit entry with the removed row as "before" and no "after"', async () => {
+      const existing = row({ key: 'x', value: '1' })
+      prisma.setting.findUnique.mockResolvedValue(existing)
+      prisma.setting.delete.mockResolvedValue(existing)
+
+      await service.remove('x', ACTOR)
+
+      expect(auditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actor: ACTOR,
+          action: 'delete',
+          entityType: 'Setting',
+          entityId: 'x',
+          before: existing,
+        }),
+      )
+      expect(auditLog.record.mock.calls[0][0]).not.toHaveProperty('after')
     })
   })
 })

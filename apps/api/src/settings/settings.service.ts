@@ -12,6 +12,9 @@ import { PrismaService } from '../prisma/prisma.service'
 import { CreateConfigDto } from './dto/create-config.dto'
 import { UpdateConfigDto } from './dto/update-config.dto'
 import { ConfigValueType, Prisma, Setting } from '@prisma/client'
+import { AuditActor, AuditLogService } from '../audit-log/audit-log.service'
+
+const AUDIT_ENTITY_TYPE = 'Setting'
 
 /** Parsed shape of a config row. */
 export type ConfigValue = string | number | boolean | Record<string, unknown> | unknown[]
@@ -38,6 +41,7 @@ export class SettingsService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   // ── Reading ───────────────────────────────────────────────────────────────
@@ -133,7 +137,13 @@ export class SettingsService {
 
   // ── Writing ───────────────────────────────────────────────────────────────
 
-  async create(dto: CreateConfigDto): Promise<Setting> {
+  /**
+   * `actor` is required, not optional — these rows decide what customers are
+   * charged, so a write with nobody to attribute it to is a gap in the trail,
+   * not a convenience. Every caller (currently just SettingsController) must
+   * resolve one from the authenticated request.
+   */
+  async create(dto: CreateConfigDto, actor: AuditActor): Promise<Setting> {
     const existing = await this.prisma.setting.findUnique({ where: { key: dto.key } })
     if (existing) throw new ConflictException(`Configuration '${dto.key}' already exists.`)
 
@@ -151,10 +161,17 @@ export class SettingsService {
     })
 
     await this.invalidate(dto.key)
+    await this.auditLog.record({
+      actor,
+      action: 'create',
+      entityType: AUDIT_ENTITY_TYPE,
+      entityId: created.key,
+      after: created,
+    })
     return created
   }
 
-  async update(key: string, dto: UpdateConfigDto): Promise<Setting> {
+  async update(key: string, dto: UpdateConfigDto, actor: AuditActor): Promise<Setting> {
     const existing = await this.prisma.setting.findUnique({ where: { key } })
     if (!existing) throw new NotFoundException(`Configuration '${key}' not found.`)
 
@@ -175,15 +192,30 @@ export class SettingsService {
     })
 
     await this.invalidate(key)
+    await this.auditLog.record({
+      actor,
+      action: 'update',
+      entityType: AUDIT_ENTITY_TYPE,
+      entityId: key,
+      before: existing,
+      after: updated,
+    })
     return updated
   }
 
-  async remove(key: string): Promise<Setting> {
+  async remove(key: string, actor: AuditActor): Promise<Setting> {
     const existing = await this.prisma.setting.findUnique({ where: { key } })
     if (!existing) throw new NotFoundException(`Configuration '${key}' not found.`)
 
     const deleted = await this.prisma.setting.delete({ where: { key } })
     await this.invalidate(key)
+    await this.auditLog.record({
+      actor,
+      action: 'delete',
+      entityType: AUDIT_ENTITY_TYPE,
+      entityId: key,
+      before: existing,
+    })
     return deleted
   }
 

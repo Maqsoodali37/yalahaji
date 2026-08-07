@@ -7,8 +7,10 @@ import {
   Param,
   Body,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common'
+import type { FastifyRequest } from 'fastify'
 import { ApiTags, ApiOperation, ApiCookieAuth } from '@nestjs/swagger'
 import { SettingsService } from './settings.service'
 import { CreateConfigDto } from './dto/create-config.dto'
@@ -16,6 +18,19 @@ import { UpdateConfigDto } from './dto/update-config.dto'
 import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard'
 import { RolesGuard } from '../auth/roles.guard'
 import { Roles } from '../auth/roles.decorator'
+import { CurrentUser } from '../auth/current-user.decorator'
+import type { AuditActor } from '../audit-log/audit-log.service'
+
+/** The shape `CurrentUser` resolves to for an admin-guarded route. */
+interface AdminPrincipal {
+  id: string
+  name: string
+  role: string
+}
+
+function actorFrom(user: AdminPrincipal, req: FastifyRequest): AuditActor {
+  return { id: user.id, name: user.name, role: user.role, ip: req.ip }
+}
 
 @ApiTags('settings')
 @Controller('settings')
@@ -64,8 +79,8 @@ export class SettingsController {
   @Roles('admin', 'manager')
   @ApiCookieAuth()
   @ApiOperation({ summary: 'Admin: create a configuration' })
-  create(@Body() dto: CreateConfigDto) {
-    return this.settingsService.create(dto)
+  create(@Body() dto: CreateConfigDto, @CurrentUser() user: AdminPrincipal, @Req() req: FastifyRequest) {
+    return this.settingsService.create(dto, actorFrom(user, req))
   }
 
   @Patch(':key')
@@ -73,8 +88,13 @@ export class SettingsController {
   @Roles('admin', 'manager')
   @ApiCookieAuth()
   @ApiOperation({ summary: 'Admin: update a configuration' })
-  update(@Param('key') key: string, @Body() dto: UpdateConfigDto) {
-    return this.settingsService.update(key, dto)
+  update(
+    @Param('key') key: string,
+    @Body() dto: UpdateConfigDto,
+    @CurrentUser() user: AdminPrincipal,
+    @Req() req: FastifyRequest,
+  ) {
+    return this.settingsService.update(key, dto, actorFrom(user, req))
   }
 
   /**
@@ -88,7 +108,7 @@ export class SettingsController {
   @Roles('admin')
   @ApiCookieAuth()
   @ApiOperation({ summary: 'Admin: delete a configuration' })
-  remove(@Param('key') key: string) {
-    return this.settingsService.remove(key)
+  remove(@Param('key') key: string, @CurrentUser() user: AdminPrincipal, @Req() req: FastifyRequest) {
+    return this.settingsService.remove(key, actorFrom(user, req))
   }
 }

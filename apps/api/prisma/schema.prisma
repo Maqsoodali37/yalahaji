@@ -685,3 +685,37 @@ model Setting {
   @@index([category])
   @@map("settings")
 }
+
+// ─── Audit log ────────────────────────────────────────────────────────────────
+//
+// Foundational, generic table — not scoped to Setting. The first caller is
+// SettingsService (store settings can change what customers are charged, so
+// "who changed it and from what" has to be answerable), but `entityType` is a
+// free-text string rather than an enum precisely so a later caller (orders,
+// coupons, …) needs no migration to start writing here, only a new value.
+//
+// `actorName`/`actorRole` are a snapshot at write time, deliberately
+// denormalised from `User` — a staff account can be renamed or have its role
+// changed later, and the log should still say who did this at the time, not
+// who they are now.
+model AuditLog {
+  id         String  @id @default(uuid())
+  actorId    String
+  actorName  String
+  actorRole  String
+  action     String
+  entityType String
+  entityId   String
+  /// State before the change. Null for `create`.
+  before Json?
+  /// State after the change. Null for `delete`.
+  after     Json?
+  ipAddress String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

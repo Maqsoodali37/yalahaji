@@ -21,6 +21,17 @@ export const POSTAL_CODE_REGEX = /^[0-9]{5}$/
 export const POSTAL_CODE_MESSAGE = 'Postal code must be 5 digits'
 
 /**
+ * Lowercase, hyphen-separated, URL-safe — no leading/trailing hyphen and no
+ * doubled one in the middle. Slugs were previously accepted as any string;
+ * nothing stopped "Ihram Sets!!" reaching the database and becoming the
+ * literal URL segment.
+ */
+export const SLUG_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/
+
+export const SLUG_MESSAGE =
+  'Slug must be lowercase letters, numbers and single hyphens (e.g. "ihram-sets")'
+
+/**
  * Length caps. Chosen to sit inside the column widths in schema.prisma rather
  * than to express a business opinion — an unbounded string on a `VARCHAR(191)`
  * column is a 500 waiting to happen, and on a `TEXT` column it is a way to
@@ -45,6 +56,10 @@ export const MAX_RETURN_REASON = 2000
  */
 export const MAX_MEDIA_URL = 191
 export const MAX_MEDIA_ALT = 191
+
+/** Per-locale SEO fields on categories (and any future SEO-bearing model). */
+export const MAX_SEO_TITLE = 60
+export const MAX_SEO_DESC = 320
 
 /** Guards against a single order being used to place a wholesale order. */
 export const MAX_ORDER_ITEMS = 50

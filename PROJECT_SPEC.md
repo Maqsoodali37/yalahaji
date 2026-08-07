@@ -189,7 +189,12 @@ Submission requires a signed-in customer; reviews appear publicly only after mod
 `KitCategory` + `KitCategorySource` — a kit step is a merchandising grouping that can draw on several catalogue categories at once, with its own ordering, icon and required flag. Deliberately not a `Category`.
 
 ### Shop configuration
-Key/value config with Redis caching, typed reads, admin CRUD, and a public endpoint driven by `is_public`.
+Key/value config with Redis caching, typed reads, admin CRUD, and a public endpoint driven by `is_public`. The admin panel's **Store Settings** screen (`apps/admin/src/app/(dashboard)/settings`) reads and writes it through `GET/POST/PATCH/DELETE /settings*`: settings are grouped into pill-filtered sections by `category`, the value editor renders per `valueType` (text / number / boolean toggle / JSON textarea), and `isPublic` is an explicit checkbox rather than implied by anything else. Write access mirrors the API guard — `admin` and `manager` can create/edit, only `admin` can delete — enforced both server-side and by hiding the controls client-side (`RequireRole`, `canManage`).
+
+### Audit log
+`AuditLog` (`apps/api/src/audit-log`) is a generic, append-only trail — `entityType`/`entityId` are free text rather than an enum, so a new caller needs no migration, only a new value. `AuditLogService.record()` never throws: a write that succeeded but couldn't be logged is still a write that succeeded, so a logging failure is reported to the error log rather than failing the request. `GET /audit-logs` (admin/manager) lists it, optionally narrowed to one entity.
+
+`SettingsService.create/update/remove` are the first caller — `actor` (id, name, role, IP) is now a required parameter, resolved in `SettingsController` from `@CurrentUser()` and `req.ip`, and every write records a before/after snapshot. The admin Store Settings screen surfaces this per row and in aggregate via a "History" panel.
 
 ### Also built
 Categories, coupons, blog with category filtering, wishlist, saved addresses, profile, stock notifications, media upload, admin products and orders.
@@ -423,6 +428,12 @@ It is a delivery-related charge and the column already exists, so it needs no mi
 
 ### Storefront and API validation are intentional mirrors
 Not duplication for its own sake: the storefront copy catches a bad value before a round trip, the API copy is what protects the database. Neither can be removed.
+
+### The audit log is one generic table, not one per entity
+`entityType` is a plain string column rather than a Prisma enum or a separate table per feature. An enum would need a migration every time a new mutation started logging; a table per entity would mean the admin "who changed this" screen has to know which table to query before it can ask. The cost is that `before`/`after` are untyped `Json?` — acceptable, because the reader is a human looking at a diff, not code branching on the shape.
+
+### `AuditActor` is a required parameter, not inferred from a request-scoped provider
+`SettingsService.create/update/remove` take `actor: AuditActor` explicitly rather than pulling the current admin from a NestJS request-scoped injection. Request-scoped providers make every consumer of that provider request-scoped too, which is a performance cost (a new instance per request) paid by the whole dependency graph for a value only mutations need. The explicit parameter also makes "which caller forgot to pass an actor" a compile error instead of a runtime `undefined`.
 
 ---
 

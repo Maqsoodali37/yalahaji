@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, buildQuery } from '@/lib/api'
 import type {
   CatalogueStats,
-  Category,
   LowStockVariant,
   Paginated,
   Product,
@@ -58,13 +57,10 @@ export function useLowStock(limit = 20) {
   })
 }
 
-export function useCategories() {
-  return useQuery({
-    queryKey: ['categories'],
-    queryFn: () => api.get<Category[]>('/categories'),
-    staleTime: 5 * 60_000,
-  })
-}
+// `useCategories` moved to `@/hooks/use-categories` now that categories are a
+// full admin feature — that file also holds the admin tree, create/update/
+// delete, reorder and bulk-action hooks, and this one shouldn't duplicate any
+// of it.
 
 export function useCreateProduct() {
   const qc = useQueryClient()

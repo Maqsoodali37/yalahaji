@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input, Textarea, Select, Checkbox, FormField } from '@/components/ui/field'
 import { VariantEditor, emptyVariant } from './variant-editor'
 import { MediaManager } from './media-manager'
-import { useCategories } from '@/hooks/use-products'
+import { useCategories } from '@/hooks/use-categories'
 import { slugify, rupeesToPaisas, paisasToRupees } from '@/lib/utils'
 import type { MediaInput, Product, ProductInput, VariantInput } from '@/types'
 
