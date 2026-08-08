@@ -10,47 +10,27 @@ import {
   User,
   Menu,
   X,
-  ChevronDown,
   PackageSearch,
   UserPlus,
 } from 'lucide-react'
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import { useCartStore } from '@/store/cart'
 import { useWishlistStore } from '@/store/wishlist'
 import { useCompareStore } from '@/store/compare'
 import { useAuthStore } from '@/store/auth'
-import { cn } from '@/lib/utils'
 import { AnnouncementBar } from './announcement-bar'
-import { MegaMenu } from './mega-menu'
+import { DesktopNav } from '@/components/navigation/desktop-nav'
+import { MobileNav } from '@/components/navigation/mobile-nav'
 import { SearchDropdown } from './search-dropdown'
 import { LanguageSwitcher } from './language-switcher'
 import { SafeImage } from '@/components/ui/safe-image'
 
-/**
- * `as const` matters: without it `key` widens to `string`, `t(key)` stops
- * typechecking, and the `as never` cast that used to paper over that also
- * disabled the check that catches a missing message. That cast is exactly how
- * the literal `cart.freeShipping` once shipped to customers.
- */
-const NAV_LINKS = [
-  { key: 'kits', href: '/shop/kits', hasMega: false, accent: false },
-  { key: 'ihram', href: '/shop/ihram', hasMega: true, accent: false },
-  { key: 'abaya', href: '/shop/abaya-hijab', hasMega: false, accent: false },
-  { key: 'fragrances', href: '/shop/fragrances', hasMega: false, accent: false },
-  { key: 'prayer', href: '/shop/prayer-accessories', hasMega: false, accent: false },
-  { key: 'tabaruk', href: '/shop/tabaruk-gifts', hasMega: false, accent: false },
-  { key: 'kitBuilder', href: '/kit-builder', hasMega: false, accent: false },
-  { key: 'blog', href: '/blog', hasMega: false, accent: false },
-  { key: 'sale', href: '/shop?filter=sale', hasMega: false, accent: true },
-] as const
 
 export function Header() {
   const t = useTranslations('nav')
   const locale = useLocale()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
-  const [activeMega, setActiveMega] = useState<string | null>(null)
-  const headerRef = useRef<HTMLElement>(null)
 
   const itemCount = useCartStore((s) => s.itemCount())
   const openCart = useCartStore((s) => s.openCart)
@@ -66,24 +46,10 @@ export function Header() {
   const isGuest = !isHydrating && !user
   const isCustomer = !isHydrating && !!user
 
-  // Close mega on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (headerRef.current && !headerRef.current.contains(e.target as Node)) {
-        setActiveMega(null)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
   return (
     <>
       <AnnouncementBar />
-      <header
-        ref={headerRef}
-        className="sticky top-0 z-50 bg-white border-b border-line shadow-sm"
-      >
+      <header className="sticky top-0 z-50 bg-white border-b border-line shadow-sm">
         {/* Main header row */}
         <div className="container-max">
           <div className="flex items-center gap-4 h-[72px]">
@@ -203,7 +169,12 @@ export function Header() {
               <button
                 className="md:hidden btn-ghost p-2.5"
                 onClick={() => setMobileOpen(!mobileOpen)}
-                aria-label="Menu"
+                // A disclosure for the drawer below, so it says so — and says
+                // it in the customer's language. The drawer's own controls
+                // went through next-intl; the control that opens it did not.
+                aria-label={t('primaryNav')}
+                aria-expanded={mobileOpen}
+                aria-controls="mobile-nav-drawer"
               >
                 {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
@@ -211,59 +182,27 @@ export function Header() {
           </div>
         </div>
 
-        {/* Category nav — desktop */}
-        <nav className="hidden md:block border-t border-line">
-          <div className="container-max">
-            <ul className="flex items-center gap-0.5 h-11">
-              {NAV_LINKS.map((link) => (
-                <li
-                  key={link.key}
-                  className="relative"
-                  onMouseEnter={() => link.hasMega ? setActiveMega(link.key) : setActiveMega(null)}
-                  onMouseLeave={() => setActiveMega(null)}
-                >
-                  <Link
-                    href={`/${locale}${link.href}`}
-                    className={cn(
-                      'flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-sm transition-colors whitespace-nowrap',
-                      link.accent
-                        ? 'text-alert hover:bg-red-50'
-                        : 'text-ink-2 hover:text-green hover:bg-green-tint',
-                      activeMega === link.key && 'bg-green-tint text-green'
-                    )}
-                  >
-                    {t(link.key)}
-                    {link.hasMega && <ChevronDown className="w-3.5 h-3.5 opacity-60" />}
-                  </Link>
-                  {link.hasMega && activeMega === link.key && (
-                    <MegaMenu category={link.key} />
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </nav>
+        {/*
+          Every link below comes from the Menu Management API. The array that
+          used to live at the top of this file (`NAV_LINKS`) is gone, along
+          with its per-item `hasMega` and `accent` booleans — both are now
+          columns on the row.
+        */}
+        <DesktopNav />
 
         {/* Mobile menu */}
         {mobileOpen && (
-          <div className="md:hidden border-t border-line bg-white">
-            <ul className="container-max py-3 space-y-0.5">
-              {NAV_LINKS.map((link) => (
-                <li key={link.key}>
-                  <Link
-                    href={`/${locale}${link.href}`}
-                    onClick={() => setMobileOpen(false)}
-                    className={cn(
-                      'block px-3 py-2.5 text-sm font-medium rounded-sm',
-                      link.accent
-                        ? 'text-alert'
-                        : 'text-ink-2 hover:bg-green-tint hover:text-green'
-                    )}
-                  >
-                    {t(link.key)}
-                  </Link>
-                </li>
-              ))}
+          <nav
+            id="mobile-nav-drawer"
+            aria-label={t('primaryNav')}
+            className="md:hidden border-t border-line bg-white"
+          >
+            <div className="container-max py-3">
+              {/* Expand/collapse tree, unlimited depth, driven by the
+                  `mobile` menu (falling back to `header`). */}
+              <MobileNav onNavigate={() => setMobileOpen(false)} />
+            </div>
+            <ul className="container-max pb-3 space-y-0.5">
               {/* Account block. A guest was previously offered only
                   "Account", which led to a page that fabricated an identity
                   for them; there was no way to reach sign-in or tracking from
@@ -308,7 +247,7 @@ export function Header() {
                 )}
               </li>
             </ul>
-          </div>
+          </nav>
         )}
       </header>
     </>

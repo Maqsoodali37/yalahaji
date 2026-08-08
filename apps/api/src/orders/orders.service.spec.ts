@@ -16,7 +16,7 @@ describe('OrdersService.create — request guards', () => {
 
   const prisma = {
     order: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn() },
-    address: { findFirst: jest.fn(), create: jest.fn() },
+    address: { findFirst: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
     productVariant: { findUnique: jest.fn() },
     coupon: { findFirst: jest.fn() },
     setting: { findUnique: jest.fn() },
@@ -35,6 +35,10 @@ describe('OrdersService.create — request guards', () => {
     jest.clearAllMocks()
     settings.getNumber.mockImplementation(async (_key, fallback) => fallback)
     settings.getBoolean.mockImplementation(async (_key, fallback) => fallback)
+    // clearAllMocks() clears calls but keeps implementations, so a test that
+    // stubbed $transaction would otherwise leak its transaction double into
+    // every later test in the file.
+    prisma.$transaction.mockReset()
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -117,6 +121,234 @@ describe('OrdersService.create — request guards', () => {
     const withAddressId = dto({ addressId: 'someone-elses-address', address: undefined })
 
     await expect(service.create(withAddressId, 'user-1')).rejects.toThrow(/Address not found/)
+  })
+
+  /**
+   * The delivery address is copied onto the order, never referenced.
+   *
+   * `orders.addressId` used to be the only record of where a parcel went, so a
+   * customer editing their saved address after moving house silently rewrote
+   * the destination on every order they had ever placed — including delivered
+   * ones, where that record is the only evidence in a dispute.
+   *
+   * These tests assert the copy happens at write time. Nothing here can be
+   * satisfied by a join, which is the point.
+   */
+  describe('delivery address snapshot', () => {
+    const savedAddress = {
+      id: 'addr-1',
+      label: 'Home',
+      fullName: 'Muhammad Ali',
+      phone: '+923001234567',
+      email: 'ali@example.com',
+      addressLine1: 'House 42, Street 5',
+      addressLine2: 'Near the masjid',
+      area: 'DHA Phase 5',
+      city: 'Lahore',
+      province: 'Punjab',
+      country: 'Pakistan',
+      postalCode: '54000',
+    }
+
+    /**
+     * Run `create` far enough to capture what it would have written, then stop.
+     *
+     * The variant lookup is the first thing after the address is resolved, so
+     * failing it there proves the snapshot was built without needing the whole
+     * transaction stubbed out.
+     */
+    async function captureAddressWrite(
+      overrides: Partial<CreateOrderDto>,
+      userId?: string,
+    ) {
+      prisma.productVariant.findUnique.mockResolvedValue(null)
+      await expect(service.create(dto(overrides), userId)).rejects.toThrow(
+        /Variant v-1 not found/,
+      )
+    }
+
+    it('copies a chosen saved address onto the order rather than linking it', async () => {
+      prisma.address.findFirst.mockResolvedValue(savedAddress)
+
+      // Reaching the variant lookup means resolveAddress returned; what it
+      // selected is what proves the snapshot is available to the create.
+      await captureAddressWrite({ addressId: 'addr-1', address: undefined }, 'user-1')
+
+      const select = prisma.address.findFirst.mock.calls[0][0].select
+      // Every field the order freezes must be selected here. Selecting only
+      // `id` — which is what this call used to do — is precisely how the
+      // snapshot would silently become a link again.
+      for (const field of [
+        'label', 'fullName', 'phone', 'email', 'addressLine1', 'addressLine2',
+        'area', 'country', 'city', 'province', 'postalCode',
+      ]) {
+        expect(select).toHaveProperty(field, true)
+      }
+    })
+
+    it('scopes a saved address to its owner', async () => {
+      prisma.address.findFirst.mockResolvedValue(savedAddress)
+      await captureAddressWrite({ addressId: 'addr-1', address: undefined }, 'user-1')
+
+      // A guessed id from another account must read as "not found" rather than
+      // become a parcel sent to a stranger's door.
+      expect(prisma.address.findFirst.mock.calls[0][0].where).toMatchObject({
+        id: 'addr-1',
+        userId: 'user-1',
+      })
+    })
+
+    it('leaves an inline checkout address out of the address book by default', async () => {
+      prisma.address.create.mockResolvedValue({ ...savedAddress, id: 'addr-new' })
+
+      await captureAddressWrite({ guestPhone: '+923001234567' }, 'user-1')
+
+      // userId null means the row is order-scoped and invisible to
+      // /users/me/addresses. Every signed-in checkout used to write an *owned*
+      // row, so a customer ordering monthly accumulated twelve near-duplicates
+      // of their home address.
+      expect(prisma.address.create.mock.calls[0][0].data).toMatchObject({
+        userId: null,
+        isDefaultShipping: false,
+      })
+    })
+
+    it('saves the address to the account when the customer asks it to', async () => {
+      prisma.address.create.mockResolvedValue({ ...savedAddress, id: 'addr-new' })
+
+      await captureAddressWrite({ saveAddress: true }, 'user-1')
+
+      expect(prisma.address.create.mock.calls[0][0].data).toMatchObject({
+        userId: 'user-1',
+      })
+    })
+
+    it('ignores saveAddress for a guest, who has no account to save to', async () => {
+      prisma.address.create.mockResolvedValue({ ...savedAddress, id: 'addr-new' })
+
+      await captureAddressWrite(
+        { saveAddress: true, setDefaultAddress: true, guestPhone: '+923001234567' },
+        undefined,
+      )
+
+      const data = prisma.address.create.mock.calls[0][0].data
+      expect(data.userId).toBeUndefined()
+      // A guest address becoming somebody's default would be nonsense — there
+      // is no somebody.
+      expect(data.isDefaultShipping).toBe(false)
+      expect(prisma.address.updateMany).not.toHaveBeenCalled()
+    })
+
+    it('demotes the previous default only when saving a new default', async () => {
+      prisma.address.create.mockResolvedValue({ ...savedAddress, id: 'addr-new' })
+
+      await captureAddressWrite({ saveAddress: true, setDefaultAddress: true }, 'user-1')
+
+      // Shipping only. Checkout collects a delivery address, so claiming the
+      // billing default here would change a setting the customer never saw.
+      expect(prisma.address.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+        data: { isDefaultShipping: false },
+      })
+    })
+
+    /**
+     * Drive `create()` all the way through the transaction and read back what
+     * would have been written to the `orders` row.
+     *
+     * Every other test in this block stops at the variant lookup, which proves
+     * the address was *resolved* but not that it was *written*. The whole
+     * point of this change is the ten `shipping*` columns landing on the order
+     * — a typo like `shippingPostcode` in `toShippingSnapshot` would sail past
+     * every assertion above and ship green.
+     */
+    async function captureOrderRow(
+      overrides: Partial<CreateOrderDto>,
+      userId?: string,
+    ): Promise<Record<string, unknown>> {
+      prisma.productVariant.findUnique.mockResolvedValue({
+        id: 'v-1',
+        productId: 'p-1',
+        sku: 'IHR-STD-M',
+        tier: 'standard',
+        size: 'M',
+        color: null,
+        scent: null,
+        price: 100000,
+        stock: 10,
+        product: { nameEn: 'Ihram Set', images: [{ url: 'https://cdn/ihram.webp' }] },
+      })
+      // No order issued this year yet, so the number allocator starts at 1001.
+      prisma.order.findFirst.mockResolvedValue(null)
+
+      const tx = {
+        order: { create: jest.fn(async (args: any) => ({ id: 'o-1', ...args.data })) },
+        productVariant: { update: jest.fn() },
+        product: { update: jest.fn() },
+        coupon: { update: jest.fn() },
+      }
+      prisma.$transaction.mockImplementation((work: any) => work(tx))
+
+      await service.create(dto(overrides), userId)
+
+      return tx.order.create.mock.calls[0][0].data
+    }
+
+    it('writes all eleven address columns onto the order row', async () => {
+      prisma.address.findFirst.mockResolvedValue(savedAddress)
+
+      const row = await captureOrderRow({ addressId: 'addr-1', address: undefined }, 'user-1')
+
+      // Field names are asserted literally, because they are the contract
+      // between this service, schema.prisma, the backfill migration and both
+      // frontends. A rename that misses one of those five places is exactly
+      // the bug this pins.
+      expect(row).toMatchObject({
+        shippingLabel: 'Home',
+        shippingFullName: 'Muhammad Ali',
+        shippingPhone: '+923001234567',
+        shippingEmail: 'ali@example.com',
+        shippingAddressLine1: 'House 42, Street 5',
+        shippingAddressLine2: 'Near the masjid',
+        shippingArea: 'DHA Phase 5',
+        shippingCountry: 'Pakistan',
+        shippingCity: 'Lahore',
+        shippingProvince: 'Punjab',
+        shippingPostalCode: '54000',
+      })
+    })
+
+    it('keeps addressId alongside the snapshot, for provenance', async () => {
+      prisma.address.findFirst.mockResolvedValue(savedAddress)
+
+      const row = await captureOrderRow({ addressId: 'addr-1', address: undefined }, 'user-1')
+
+      // The link still records *which* saved address was chosen. What changed
+      // is that nothing reads through it for display.
+      expect(row.addressId).toBe('addr-1')
+    })
+
+    it('snapshots an inline address too, not just a saved one', async () => {
+      prisma.address.create.mockResolvedValue({ ...savedAddress, id: 'addr-new' })
+
+      const row = await captureOrderRow({ guestPhone: '+923001234567' }, undefined)
+
+      // A guest order has the same claim on an immutable record of where its
+      // parcel went as an account order does.
+      expect(row.shippingFullName).toBe('Muhammad Ali')
+      expect(row.shippingCity).toBe('Lahore')
+    })
+
+    it('does not demote anything when the address is not being saved', async () => {
+      prisma.address.create.mockResolvedValue({ ...savedAddress, id: 'addr-new' })
+
+      // setDefaultAddress without saveAddress is meaningless: an order-scoped
+      // row is not in the address book to be defaulted to. It must not clear
+      // the customer's real default as a side effect.
+      await captureAddressWrite({ setDefaultAddress: true }, 'user-1')
+
+      expect(prisma.address.updateMany).not.toHaveBeenCalled()
+    })
   })
 
   describe('shop configuration', () => {
@@ -236,6 +468,21 @@ describe('OrdersService.trackByNumber', () => {
     user: { email: 'buyer@example.com', phone: '+923001234567' },
     couponId: 'coupon-1',
     paymentMethod: 'cod',
+    // The delivery-address snapshot. These eleven columns put the recipient's
+    // name, phone, email and street address on the order row itself, so the
+    // public tracking response has ten new ways to leak that it did not have
+    // before — and the guard above only checks what is listed here.
+    shippingLabel: 'Home',
+    shippingFullName: 'Muhammad Ali',
+    shippingPhone: '+923001234567',
+    shippingEmail: 'buyer@example.com',
+    shippingAddressLine1: 'House 42, Street 5',
+    shippingAddressLine2: 'Near the masjid',
+    shippingArea: 'DHA Phase 5',
+    shippingCountry: 'Pakistan',
+    shippingCity: 'Lahore',
+    shippingProvince: 'Punjab',
+    shippingPostalCode: '54000',
   }
 
   it('returns nothing that identifies the customer', async () => {
@@ -246,7 +493,12 @@ describe('OrdersService.trackByNumber', () => {
 
     const result = await service.trackByNumber('YH-2026-1001-K7QX9M')
 
-    for (const leaked of ['guestEmail', 'guestPhone', 'address', 'user', 'couponId', 'paymentMethod']) {
+    for (const leaked of [
+      'guestEmail', 'guestPhone', 'address', 'user', 'couponId', 'paymentMethod',
+      'shippingLabel', 'shippingFullName', 'shippingPhone', 'shippingEmail',
+      'shippingAddressLine1', 'shippingAddressLine2', 'shippingArea',
+      'shippingCountry', 'shippingCity', 'shippingProvince', 'shippingPostalCode',
+    ]) {
       expect(result).not.toHaveProperty(leaked)
     }
     expect(result.number).toBe('YH-2026-1001-K7QX9M')

@@ -3,10 +3,23 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from 'next-intl'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle, ChevronRight, Lock, CreditCard, ClipboardList, Copy, Check } from 'lucide-react'
 import { useCartStore } from '@/store/cart'
 import { useAuthStore } from '@/store/auth'
-import { placeOrder, ApiError } from '@/lib/api'
+import {
+  placeOrder,
+  fetchAddresses,
+  createAddress,
+  ApiError,
+  type AddressInput,
+} from '@/lib/api'
+import { formatAddressLines, isDeliverable, DEFAULT_COUNTRY } from '@/lib/address'
+import { AddressForm } from '@/components/account/address-form'
+import {
+  SavedAddressPicker,
+  ChangeAddressPanel,
+} from '@/components/checkout/address-book'
 import { formatPrice } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import {
@@ -115,12 +128,52 @@ export function CheckoutClient() {
   const [address, setAddress] = useState<Partial<Address>>({
     fullName: '',
     phone: '',
+    email: '',
     addressLine1: '',
     addressLine2: '',
+    area: '',
     city: '',
     province: '',
+    country: DEFAULT_COUNTRY,
     postalCode: '',
-    isDefault: false,
+  })
+
+  /**
+   * Which saved address the form was filled from, if any.
+   *
+   * Held so an unedited selection can be sent as `addressId` rather than as an
+   * inline copy — otherwise every checkout against a saved address wrote a
+   * duplicate row and the customer's address book grew by one per order.
+   */
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null)
+  const [showChangePanel, setShowChangePanel] = useState(false)
+  const [showAddForm, setShowAddForm] = useState(false)
+  /** Only offered to signed-in customers typing an address by hand. */
+  const [saveToAccount, setSaveToAccount] = useState(false)
+  const [makeDefault, setMakeDefault] = useState(false)
+
+  const queryClient = useQueryClient()
+
+  /**
+   * The customer's saved addresses, fetched once with the checkout page.
+   *
+   * `enabled` keeps this off entirely for guests: there is no account behind
+   * the request and firing it would be a guaranteed 401 on every guest
+   * checkout. Waiting out `isHydrating` avoids the same 401 in the frame
+   * before a signed-in customer's token is confirmed on a hard refresh.
+   *
+   * Because the whole list is cached here, switching between saved addresses
+   * is a state change rather than a round trip — no request fires when the
+   * customer taps a different card.
+   */
+  const { data: savedAddresses = [] } = useQuery({
+    queryKey: ['my-addresses'],
+    queryFn: fetchAddresses,
+    enabled: Boolean(user) && !isHydrating,
+    // The address book rarely changes mid-checkout, and a refetch on tab focus
+    // would replace the list under a half-filled form.
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 
   const [addressErrors, setAddressErrors] = useState<FieldErrors<AddressFormValues>>({})
@@ -136,7 +189,71 @@ export function CheckoutClient() {
   const setField = (field: keyof AddressFormValues, value: string) => {
     const next = { ...address, [field]: value }
     setAddress(next)
-    if (addressSubmitted) setAddressErrors(validate(next, addressRules))
+    if (addressSubmitted) setAddressErrors(validate(next as AddressFormValues, addressRules))
+    // Typing over a prefilled address makes it a one-off for this order: the
+    // saved row is left alone, and what goes to the API is the edited copy.
+    // Silently updating the saved address instead would rewrite an address the
+    // customer uses for other things.
+    if (selectedAddressId) setSelectedAddressId(null)
+  }
+
+  /** Copy a saved address into the form, replacing whatever is there. */
+  const applyAddress = (a: Address) => {
+    const next: Partial<Address> = {
+      fullName: a.fullName,
+      phone: a.phone,
+      email: a.email ?? '',
+      addressLine1: a.addressLine1,
+      addressLine2: a.addressLine2 ?? '',
+      area: a.area ?? '',
+      city: a.city,
+      province: a.province,
+      country: a.country || DEFAULT_COUNTRY,
+      postalCode: a.postalCode ?? '',
+    }
+    setAddress(next)
+    setSelectedAddressId(a.id)
+    // Re-validate immediately when the customer has already hit Continue once,
+    // so switching to a complete address clears the errors rather than leaving
+    // them on screen against fields that are now fine.
+    if (addressSubmitted) setAddressErrors(validate(next as AddressFormValues, addressRules))
+  }
+
+  /**
+   * Fill the form from the default address, once, on arrival.
+   *
+   * `autofilled` rather than a dependency on `savedAddresses` alone: the query
+   * resolving must not overwrite an address the customer has already started
+   * typing, and it must not undo a deliberate switch to a different card.
+   * Falls back to the first address when none is flagged default, because an
+   * account with addresses and no default still wants one less form to fill.
+   */
+  const autofilled = useRef(false)
+  useEffect(() => {
+    if (autofilled.current || !user || savedAddresses.length === 0) return
+    const preferred =
+      savedAddresses.find((a) => a.isDefaultShipping) ?? savedAddresses[0]
+    if (!preferred) return
+    autofilled.current = true
+    applyAddress(preferred)
+    // applyAddress is stable enough for this one-shot; re-running on every
+    // render of it would defeat the guard above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, savedAddresses])
+
+  /** A saved address chosen but missing something the courier needs. */
+  const selectedAddress = savedAddresses.find((a) => a.id === selectedAddressId)
+  const selectedIsIncomplete = Boolean(selectedAddress) && !isDeliverable(selectedAddress)
+
+  /** Save a brand-new address to the account and use it for this order. */
+  const handleAddAddress = async (values: AddressInput) => {
+    const created = await createAddress(values)
+    // Refetch so the picker shows it, and so a new default demotes the old one
+    // — only the server knows which row that was.
+    await queryClient.invalidateQueries({ queryKey: ['my-addresses'] })
+    applyAddress(created)
+    setShowAddForm(false)
+    setShowChangePanel(false)
   }
   // Standard delivery is the only shipping method offered
   const shippingMethod: ShippingMethod = 'standard'
@@ -264,6 +381,48 @@ export function CheckoutClient() {
       // Only variant ids and quantities are sent. The API recomputes every
       // price, discount and shipping cost from the database, so nothing the
       // client believes about the total can influence what is charged.
+      // An untouched saved address is sent by id; anything typed or edited is
+      // sent inline. Sending the inline copy in both cases would write a
+      // duplicate address row on every checkout, so a customer who ordered
+      // monthly ended up with twelve copies of their home address.
+      //
+      // Either way the API copies the fields onto the order as a snapshot, so
+      // editing or deleting the saved address afterwards cannot change where
+      // this order is recorded as having gone.
+      const addressPayload =
+        selectedAddressId && !selectedIsIncomplete
+          ? { addressId: selectedAddressId }
+          : {
+              address: {
+                // The checkout form has no label field, and `Address.label`
+                // defaults to "Home" in the schema — so a one-off delivery to
+                // a relative would have been filed, and shown to staff, as the
+                // customer's home address. Falling back to the city mirrors
+                // what AddressForm does with a blank label.
+                label: address.city?.trim() || undefined,
+                // And the enum alongside it, or the fallback above is undone:
+                // `labelType` defaults to `home` in the schema, so this
+                // one-off address would show a "Home" chip in the address book
+                // next to the customer's actual home address. `other` is the
+                // truth — checkout collects a delivery address, not a category.
+                labelType: 'other',
+                fullName: address.fullName ?? '',
+                phone: address.phone ?? '',
+                email: address.email || undefined,
+                addressLine1: address.addressLine1 ?? '',
+                addressLine2: address.addressLine2 || undefined,
+                area: address.area || undefined,
+                city: address.city ?? '',
+                province: address.province ?? '',
+                country: address.country || DEFAULT_COUNTRY,
+                postalCode: address.postalCode || undefined,
+              },
+              // Ignored server-side for guests, who have no account to save to.
+              ...(user && saveToAccount
+                ? { saveAddress: true, setDefaultAddress: makeDefault }
+                : {}),
+            }
+
       const order = await placeOrder({
         items: items.map((i) => ({
           variantId: i.variantId,
@@ -271,15 +430,7 @@ export function CheckoutClient() {
           hasGiftWrap: i.hasGiftWrap,
           giftMessage: i.giftMessage,
         })),
-        address: {
-          fullName: address.fullName ?? '',
-          phone: address.phone ?? '',
-          addressLine1: address.addressLine1 ?? '',
-          addressLine2: address.addressLine2 || undefined,
-          city: address.city ?? '',
-          province: address.province ?? '',
-          postalCode: address.postalCode || undefined,
-        },
+        ...addressPayload,
         paymentMethod,
         shippingMethod,
         couponCode,
@@ -303,6 +454,12 @@ export function CheckoutClient() {
           coupon: couponCode,
         },
       )
+
+      // A checkout that saved a new address leaves the cached list a row short
+      // for the rest of the session.
+      if (user && saveToAccount) {
+        queryClient.invalidateQueries({ queryKey: ['my-addresses'] })
+      }
 
       // Only clear once the order actually exists — clearing first would lose
       // the basket if the request failed.
@@ -472,6 +629,35 @@ export function CheckoutClient() {
                 <div className="bg-white border border-line rounded-md p-6 space-y-4">
                   <h2 className="font-bold text-ink text-lg">Delivery Address</h2>
 
+                  {/*
+                    Signed-in customers only. A guest gets the blank form on its
+                    own — there is no account to read saved addresses from, and
+                    an empty picker urging them to sign in turns a working guest
+                    checkout into a nag at the worst moment.
+                  */}
+                  {user && (
+                    <>
+                      <SavedAddressPicker
+                        addresses={savedAddresses}
+                        selectedId={selectedAddressId}
+                        onSelect={(id) => {
+                          const found = savedAddresses.find((a) => a.id === id)
+                          if (found) applyAddress(found)
+                        }}
+                        onAddNew={() => setShowAddForm(true)}
+                        onChangeAddress={() => setShowChangePanel(true)}
+                        incomplete={selectedIsIncomplete}
+                        onEditIncomplete={() => setSelectedAddressId(null)}
+                      />
+                      <hr className="border-line" />
+                      <p className="text-xs text-stone">
+                        {selectedAddressId
+                          ? 'Using the address above. Edit any field below to change it for this order only.'
+                          : 'Enter the delivery address for this order.'}
+                      </p>
+                    </>
+                  )}
+
                   <div className="grid sm:grid-cols-2 gap-4">
                     <FormField label="Full Name" required error={addressErrors.fullName}>
                       {(props) => (
@@ -533,6 +719,19 @@ export function CheckoutClient() {
                     )}
                   </FormField>
 
+                  <FormField label="Area (optional)" error={addressErrors.area}>
+                    {(props) => (
+                      <input
+                        {...props}
+                        value={address.area ?? ''}
+                        onChange={(e) => setField('area', e.target.value)}
+                        className={inputClass(addressErrors.area)}
+                        placeholder="DHA Phase 5, Gulberg III"
+                        autoComplete="address-level3"
+                      />
+                    )}
+                  </FormField>
+
                   <div className="grid sm:grid-cols-3 gap-4">
                     <FormField label="City" required error={addressErrors.city}>
                       {(props) => (
@@ -576,6 +775,40 @@ export function CheckoutClient() {
                       )}
                     </FormField>
                   </div>
+
+                  {/*
+                    Offered only when the address is not an unedited saved one:
+                    a "save this" tickbox against an address that is already
+                    saved is a control that does nothing. Guests never see it —
+                    there is no account behind it.
+                  */}
+                  {user && !selectedAddressId && (
+                    <div className="space-y-2 pt-1">
+                      <label className="flex items-center gap-2 text-sm text-ink cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={saveToAccount}
+                          onChange={(e) => {
+                            setSaveToAccount(e.target.checked)
+                            if (!e.target.checked) setMakeDefault(false)
+                          }}
+                          className="w-4 h-4 accent-green"
+                        />
+                        Save this address to my account
+                      </label>
+                      {saveToAccount && (
+                        <label className="flex items-center gap-2 text-sm text-ink cursor-pointer ms-6">
+                          <input
+                            type="checkbox"
+                            checked={makeDefault}
+                            onChange={(e) => setMakeDefault(e.target.checked)}
+                            className="w-4 h-4 accent-green"
+                          />
+                          Make it my default delivery address
+                        </label>
+                      )}
+                    </div>
+                  )}
 
                   {addressSubmitted && hasErrors(addressErrors) && (
                     <p role="alert" className="text-sm text-alert">
@@ -689,11 +922,15 @@ export function CheckoutClient() {
                         the one on the parcel. */}
                     <p className="font-semibold text-ink">{address.fullName}</p>
                     <p className="text-sm text-stone">{address.phone}</p>
-                    <p className="text-sm text-stone">
-                      {[address.addressLine1, address.addressLine2, address.city, address.province, address.postalCode]
-                        .filter(Boolean)
-                        .join(', ')}
-                    </p>
+                    {address.email && <p className="text-sm text-stone">{address.email}</p>}
+                    {/* Shared with the address book and the order pages, so
+                        `area` cannot appear on one screen and vanish on the
+                        next — which reads to a customer as data being lost. */}
+                    {formatAddressLines(address).map((line) => (
+                      <p key={line} className="text-sm text-stone">
+                        {line}
+                      </p>
+                    ))}
                   </div>
 
                   {/* Shipping & Payment summary */}
@@ -806,6 +1043,40 @@ export function CheckoutClient() {
           </div>
         </div>
       </div>
+
+      {/*
+        Both dialogs live outside the step tree so they survive a step change
+        and are not unmounted mid-interaction. The change panel closes when the
+        add form opens: stacking two modals leaves the customer two Escapes
+        from the form they were filling in.
+      */}
+      {showChangePanel && !showAddForm && (
+        <ChangeAddressPanel
+          addresses={savedAddresses}
+          selectedId={selectedAddressId}
+          onSelect={(id) => {
+            const found = savedAddresses.find((a) => a.id === id)
+            if (found) applyAddress(found)
+          }}
+          onAddNew={() => setShowAddForm(true)}
+          onClose={() => setShowChangePanel(false)}
+        />
+      )}
+
+      {/*
+        The same dialog the address book uses. A second address form living in
+        the checkout tree would be a second place for the field list and the
+        validation wiring to drift, and the one that drifts is always the one
+        nobody is looking at.
+      */}
+      {showAddForm && (
+        <AddressForm
+          onSubmit={handleAddAddress}
+          onClose={() => setShowAddForm(false)}
+          title="Add a delivery address"
+          submitLabel="Save and use"
+        />
+      )}
     </div>
   )
 }

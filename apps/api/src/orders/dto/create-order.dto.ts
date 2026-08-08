@@ -19,7 +19,7 @@ import {
 } from 'class-validator'
 import { Type } from 'class-transformer'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { PaymentMethod, ShippingMethod } from '@prisma/client'
+import { AddressLabel, PaymentMethod, ShippingMethod } from '@prisma/client'
 import {
   PAKISTANI_PHONE_REGEX,
   PAKISTANI_PHONE_MESSAGE,
@@ -34,6 +34,10 @@ import {
   MAX_COUPON_CODE,
   MAX_ORDER_ITEMS,
   MAX_ITEM_QUANTITY,
+  MAX_AREA,
+  MAX_EMAIL,
+  MAX_COUNTRY,
+  SUPPORTED_COUNTRIES,
 } from '../../common/validation'
 import { ENABLED_PAYMENT_METHODS } from '../../common/payment-methods'
 
@@ -116,10 +120,40 @@ export class OrderAddressDto {
   @MaxLength(MAX_CITY)
   province: string
 
+  @ApiPropertyOptional({ description: 'Named locality, e.g. "DHA Phase 5"' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_AREA)
+  area?: string
+
   @ApiPropertyOptional()
   @IsOptional()
   @Matches(POSTAL_CODE_REGEX, { message: POSTAL_CODE_MESSAGE })
   postalCode?: string
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsEmail({}, { message: 'Enter a valid email address' })
+  @MaxLength(MAX_EMAIL)
+  email?: string
+
+  /**
+   * Without this, an address saved from checkout takes the schema default of
+   * `home` — which would quietly undo the `label` fallback above. A one-off
+   * delivery to a relative would show a "Home" chip in the address book next
+   * to the customer's actual home address, and the enum is what code groups
+   * on, so the free-text fallback alone does not cover it.
+   */
+  @ApiPropertyOptional({ enum: AddressLabel })
+  @IsOptional()
+  @IsEnum(AddressLabel)
+  labelType?: AddressLabel
+
+  @ApiPropertyOptional({ default: 'Pakistan', enum: SUPPORTED_COUNTRIES })
+  @IsOptional()
+  @IsIn(SUPPORTED_COUNTRIES, { message: 'We do not ship to that country yet' })
+  @MaxLength(MAX_COUNTRY)
+  country?: string
 }
 
 export class CreateOrderDto {
@@ -141,6 +175,30 @@ export class CreateOrderDto {
   @ValidateNested()
   @Type(() => OrderAddressDto)
   address?: OrderAddressDto
+
+  /**
+   * Keep the inline `address` in the customer's address book.
+   *
+   * This is what lets someone add a new delivery address during checkout
+   * without leaving the page — the alternative was sending them to
+   * /account/addresses and losing the basket state they had built up.
+   *
+   * Ignored for guests: there is no account to save it to, and a guest address
+   * is persisted with `userId = NULL` regardless.
+   */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  saveAddress?: boolean
+
+  /**
+   * Only meaningful alongside `saveAddress`. Marks the newly saved address as
+   * the customer's default, demoting whichever held it.
+   */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  setDefaultAddress?: boolean
 
   /**
    * Validated against the enabled subset, not the whole enum. Disabling the

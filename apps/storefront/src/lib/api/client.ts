@@ -102,6 +102,20 @@ export interface RequestOptions extends Omit<RequestInit, 'body'> {
   anonymous?: boolean
   /** Next.js fetch cache options — server components only. */
   next?: { revalidate?: number | false; tags?: string[] }
+  /**
+   * `null` disables the default request timeout for this call.
+   *
+   * Needed because Next.js opts a `fetch` out of its Data Cache when the
+   * request carries an `AbortSignal` — the signal makes the request
+   * uncacheable. For an ordinary read that costs a little latency; for a read
+   * whose whole point is a tagged cache entry (`fetchMenu`, tagged `menus`),
+   * it means `revalidateTag` has nothing to revalidate and the admin's
+   * "Publish" silently does nothing.
+   *
+   * Use it only where the caller has its own bound on how long the render may
+   * take — a server component with a cached fallback, not a form submission.
+   */
+  signal?: AbortSignal | null
 }
 
 /** Nest returns `message` as string | string[]; flatten it. */
@@ -141,7 +155,12 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
       // load balancer that accepts the SYN and never replies) hangs the
       // request until the platform kills it. A bounded wait turns that into
       // an ApiError, which apiFetchSafe degrades to its fallback.
-      signal: rest.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      // `?? ` would be wrong here: `null` is a deliberate opt-out and would
+      // fall through to the default timeout, which is the case this exists
+      // for. Only an omitted signal gets one.
+      ...(rest.signal === null
+        ? { signal: undefined }
+        : { signal: rest.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS) }),
       ...(next ? { next } : {}),
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     })

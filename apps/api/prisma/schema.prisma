@@ -66,6 +66,15 @@ enum Role {
   fulfillment
 }
 
+/// Retail is the default and covers every existing account. Wholesale is set
+/// by staff; nothing in the customer-facing signup flow can select it, which
+/// is the point — it gates pricing and navigation a retail buyer should not
+/// see.
+enum CustomerGroup {
+  retail
+  wholesale
+}
+
 enum MediaType {
   image
   video
@@ -102,6 +111,7 @@ model User {
   phone         String  @unique
   passwordHash  String?
   role          Role    @default(customer)
+  customerGroup CustomerGroup @default(retail) @map("customer_group")
   isActive      Boolean @default(true)
   loyaltyPoints Int     @default(0)
   avatar        String?
@@ -149,21 +159,53 @@ model Session {
 
 // ─── Address ──────────────────────────────────────────────────────────────────
 
+/**
+ * The structured half of an address label.
+ *
+ * `Address.label` stays free text alongside this: rows predating the enum hold
+ * whatever customers typed ("Warehouse", "Ammi's house"), and it is still what
+ * gets shown when `labelType` is `other`. The enum is what code groups and
+ * filters on; the string is what a human reads.
+ */
+enum AddressLabel {
+  home
+  office
+  other
+}
+
 model Address {
   id           String   @id @default(uuid())
   // Nullable so a guest checkout can persist a delivery address without an
   // account. Order.addressId is required, so without this guest orders could
   // never be created despite guestEmail/guestPhone existing for exactly that.
   userId       String?
-  label        String   @default("Home")
+  // Free-text display name. Meaningful mainly when labelType is `other`.
+  label        String       @default("Home")
+  labelType    AddressLabel @default(home)
   fullName     String
   phone        String
   addressLine1 String
   addressLine2 String?
   city         String
   province     String
+  // A named locality (Gulberg, DHA Phase 5, Saddar). Previously crammed into
+  // addressLine2 next to the landmark, which made both unreadable on a label.
+  area         String?
+  // NOT NULL with a default: the shop ships within Pakistan, so this records
+  // what is already true rather than asking the customer to restate it. It
+  // exists so shipping abroad becomes a config change rather than a migration
+  // against a populated orders table.
+  country      String   @default("Pakistan")
   postalCode   String?
-  isDefault    Boolean  @default(false)
+  // Per-address rather than per-account: the person receiving a parcel at the
+  // office is not always the account holder.
+  email        String?
+  isDefaultShipping Boolean @default(false)
+  // Write-only for now — cash on delivery is the only enabled payment method,
+  // so nothing collects a billing address yet. Added with its sibling rather
+  // than in a second ALTER against `addresses` at the moment a gateway lands,
+  // which is the worst time to be altering the table every checkout reads.
+  isDefaultBilling  Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -443,7 +485,31 @@ model Order {
   userId         String?
   guestEmail     String?
   guestPhone     String?
+  // Which saved address was picked. Kept for provenance only — nothing reads
+  // through it for display, because the row it points at is mutable and the
+  // customer may edit or delete it. The shipping* columns below are what the
+  // order actually shipped to.
   addressId      String?
+
+  // Immutable delivery-address snapshot, written once at checkout.
+  //
+  // Reading the address through `addressId` meant a customer editing their
+  // saved address rewrote the delivery address on every historical order,
+  // destroying the only record of where a delivered parcel actually went.
+  // Nullable because the columns were added to a populated table; the
+  // migration backfills every existing row.
+  shippingLabel        String?
+  shippingFullName     String?
+  shippingPhone        String?
+  shippingEmail        String?
+  shippingAddressLine1 String?
+  shippingAddressLine2 String?
+  shippingArea         String?
+  shippingCountry      String?
+  shippingCity         String?
+  shippingProvince     String?
+  shippingPostalCode   String?
+
   status         OrderStatus    @default(pending)
   paymentMethod  PaymentMethod
   paymentStatus  PaymentStatus  @default(unpaid)
@@ -469,6 +535,10 @@ model Order {
   @@index([userId])
   @@index([number])
   @@index([status])
+  // The admin order list filters on city/province. Those filters read the
+  // snapshot columns now rather than the joined address row.
+  @@index([shippingCity])
+  @@index([shippingProvince])
   @@map("orders")
 }
 
@@ -734,4 +804,202 @@ model AuditLog {
   @@index([actorId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ─── Navigation menus ─────────────────────────────────────────────────────────
+//
+// Storefront navigation — header, footer, mobile drawer, sidebar and mega
+// menus — driven from the database rather than from arrays in the storefront.
+//
+// Deliberately NOT a `Setting` row. A menu is an ordered, nestable list whose
+// items each carry a link target, a schedule, an audience and (for a mega
+// menu) a layout — none of which a key/value store can express without the
+// whole thing collapsing into one opaque JSON blob that nothing can query,
+// reorder or validate.
+//
+// Deliberately NOT `Category` either, even though most items point at one: a
+// menu item can also point at a product, a CMS page, a brand, a collection or
+// an arbitrary URL, and the same category can appear in several menus at
+// different depths. Merchandising order is not catalogue structure.
+
+enum MenuLocation {
+  header
+  footer
+  mobile
+  sidebar
+  mega
+}
+
+/// What a menu item points at. The discriminator decides which of
+/// `targetSlug` / `url` is meaningful, and how the storefront builds the href.
+enum MenuLinkType {
+  category
+  product
+  cms_page
+  brand
+  collection
+  /// Internal path, entered by staff (`/kit-builder`, `/shop?filter=sale`).
+  custom
+  /// Absolute off-site URL. Rendered with rel="noopener noreferrer".
+  external
+  /// A label with children and no destination — a footer column heading, or a
+  /// dropdown group title. Rendered as text, not an anchor.
+  ///
+  /// Exists because the alternative staff reach for is `custom` with `#`,
+  /// which renders a real anchor that jumps to the top of the page when
+  /// clicked and is announced to a screen reader as a link to nowhere.
+  heading
+}
+
+/// Who may see an item. Resolved server-side from the authenticated
+/// principal, never from a client-supplied parameter — otherwise "wholesale
+/// only" is one query string away from being public.
+enum MenuVisibility {
+  everyone
+  guest
+  customer
+  wholesale
+  retail
+}
+
+/// Which viewport an item is for. Filtered in the browser rather than on the
+/// server, because the viewport is a client-side fact the server render
+/// cannot know — see MenusService for why the column still ships in the
+/// payload.
+enum MenuDevice {
+  all
+  desktop
+  mobile
+}
+
+/// Which of the mega-menu layouts to render. A closed set rather than free
+/// text: the storefront has to have a component for each one, so an
+/// unrecognised value is a blank panel, not a new design.
+enum MegaMenuLayout {
+  /// Plain multi-column list of child links.
+  columns
+  /// Columns plus a promotional banner in the last column.
+  columns_with_banner
+  /// Image-led grid of featured categories.
+  featured_grid
+  /// Columns plus a featured-products strip along the bottom.
+  columns_with_products
+}
+
+/// One menu per location — `GET /menus/location/:location` has to be
+/// unambiguous, and "two active header menus" is a state with no correct
+/// resolution.
+model Menu {
+  id       String       @id @default(uuid())
+  location MenuLocation @unique
+
+  /// Staff-facing label. Not rendered to customers.
+  name String
+
+  isActive Boolean @default(true)
+
+  /// Seconds the storefront and API may cache this menu. Per-menu rather than
+  /// a single global config because a footer changes far less often than a
+  /// header carrying a seasonal sale link.
+  cacheTtl Int @default(300) @map("cache_ttl")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items MenuItem[]
+
+  @@map("menus")
+}
+
+model MenuItem {
+  id       String  @id @default(uuid())
+  menuId   String  @map("menu_id")
+  parentId String? @map("parent_id")
+
+  /// Flat per-locale columns, mirroring `Category.nameEn/Ur/Ar` rather than a
+  /// translation table. Ur/Ar are nullable: a missing translation falls back
+  /// to English at the adapter, which is better than forcing staff to invent
+  /// one to save the row.
+  titleEn String
+  titleUr String?
+  titleAr String?
+
+  linkType MenuLinkType @default(custom) @map("link_type")
+
+  /// The target's slug, for category / product / cms_page / brand /
+  /// collection. The slug is the routing key on the storefront, so it — not
+  /// the id — is what a href is built from.
+  targetSlug String? @map("target_slug")
+
+  /// The target's id where staff picked it from a list. Advisory only: kept
+  /// so the admin picker can round-trip a selection, never used for routing.
+  targetId String? @map("target_id")
+
+  /// Internal path for `custom`, absolute URL for `external`.
+  url String?
+
+  /// Lucide icon name (`Package`, `Sparkles`). Resolved against an allowlist
+  /// in the storefront — an unknown name renders no icon rather than
+  /// throwing.
+  icon String?
+
+  /// Thumbnail shown in image-led mega layouts. A MinIO URL from
+  /// POST /media/upload.
+  image String?
+
+  /// Optional pill ("New", "Sale"). Per-locale for the same reason as title.
+  badgeEn String?
+  badgeUr String?
+  badgeAr String?
+
+  order    Int     @default(0)
+  isActive Boolean @default(true) @map("is_active")
+
+  visibility MenuVisibility @default(everyone)
+  device     MenuDevice     @default(all)
+
+  /// Scheduling. Filtered at READ time, not at publish time, so a seasonal
+  /// item starts and stops on its own without an admin being awake at the
+  /// boundary.
+  publishFrom  DateTime? @map("publish_from")
+  publishUntil DateTime? @map("publish_until")
+
+  // ── Mega menu ──────────────────────────────────────────────────────────
+  isMegaMenu  Boolean         @default(false) @map("is_mega_menu")
+  megaLayout  MegaMenuLayout? @map("mega_layout")
+  megaColumns Int             @default(4) @map("mega_columns")
+
+  /// Everything about a mega panel that is a *list* rather than a setting:
+  /// featured product slugs, banner image/href/heading, custom HTML-free
+  /// content blocks. Json because the shape differs per layout and each new
+  /// layout would otherwise be a migration.
+  ///
+  /// Read defensively — see `normaliseMegaConfig` in menus.service.ts. Nothing
+  /// stops an admin saving a shape the storefront does not expect.
+  megaConfig Json? @map("mega_config")
+
+  // ── SEO ────────────────────────────────────────────────────────────────
+  /// Extra rel tokens. `noFollow` and the noopener/noreferrer pair for
+  /// external links are added by the service; this is for anything else
+  /// (`sponsored`, `ugc`).
+  relAttribute String? @map("rel_attribute")
+  noFollow     Boolean @default(false) @map("no_follow")
+  openInNewTab Boolean @default(false) @map("open_in_new_tab")
+
+  /// `title=""` on the anchor. Per-locale.
+  titleAttrEn String?
+  titleAttrUr String?
+  titleAttrAr String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  menu     Menu       @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  parent   MenuItem?  @relation("MenuItemTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children MenuItem[] @relation("MenuItemTree")
+
+  @@index([menuId, parentId, order])
+  @@index([parentId])
+  @@index([isActive, publishFrom, publishUntil])
+  @@map("menu_items")
 }

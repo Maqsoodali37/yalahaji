@@ -29,6 +29,11 @@ export function useAdminCategoryTree() {
   return useQuery({
     queryKey: categoryKeys.adminTree,
     queryFn: () => api.get<Category[]>('/categories/admin/tree'),
+    // Safe despite this being the screen that edits categories: every mutation
+    // below invalidates the whole key, so this only affects navigating back to
+    // a tree nothing has changed — and it stops the menu item dialog
+    // re-fetching the entire tree every time it opens.
+    staleTime: 60_000,
   })
 }
 

@@ -7,10 +7,14 @@ export interface OrderAddressInput {
   label?: string
   fullName: string
   phone: string
+  email?: string
   addressLine1: string
   addressLine2?: string
+  area?: string
   city: string
   province: string
+  country?: string
+  labelType?: 'home' | 'office' | 'other'
   postalCode?: string
 }
 
@@ -28,6 +32,15 @@ export interface PlaceOrderInput {
    * `address` must be supplied — the API rejects a request with neither.
    */
   address?: OrderAddressInput
+  /**
+   * Keep `address` in the customer's address book. This is what lets someone
+   * add a delivery address during checkout without navigating away and losing
+   * the basket state they have built up. Ignored for guests — there is no
+   * account to save it to.
+   */
+  saveAddress?: boolean
+  /** Only meaningful with `saveAddress`. Demotes the current default. */
+  setDefaultAddress?: boolean
   paymentMethod: PaymentMethod
   shippingMethod?: ShippingMethod
   couponCode?: string
@@ -51,15 +64,39 @@ export async function placeOrder(input: PlaceOrderInput): Promise<Order> {
 
 export interface OrderPage {
   items: Order[]
+  /** Every order on the account, not the length of `items`. */
   total: number
+  page: number
+  limit: number
   totalPages: number
 }
 
-export async function fetchMyOrders(page = 1, limit = 20): Promise<OrderPage> {
+/** What the order list shows per page. */
+export const ORDERS_PER_PAGE = 10
+
+/**
+ * A page of the customer's own orders, newest first.
+ *
+ * Paginated server-side rather than fetched whole and sliced: an account with
+ * a few hundred orders would otherwise pull every line item, timeline entry
+ * and address on the account to render ten rows, on a connection that is
+ * mostly mobile. `page` and `limit` are echoed back so the "Showing 1–10 of
+ * 125" line reads from the response rather than from what the caller asked
+ * for — the two differ when someone deep-links a page past the end.
+ *
+ * The API's default sort is `createdAt desc`, which is the order this screen
+ * wants, so no sort parameter is sent.
+ */
+export async function fetchMyOrders(
+  page = 1,
+  limit = ORDERS_PER_PAGE,
+): Promise<OrderPage> {
   const res = await apiFetch<Paginated<WireOrder>>(`/orders${buildQuery({ page, limit })}`)
   return {
     items: res.items.map(adaptOrder),
     total: res.meta.total,
+    page: res.meta.page,
+    limit: res.meta.limit,
     totalPages: res.meta.totalPages,
   }
 }

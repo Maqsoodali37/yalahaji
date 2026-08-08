@@ -85,6 +85,107 @@ Exception to watch: percentages (`tax_percentage`) are not money and must not go
 
 `Wire*` types are the API's shape. Adapters exist to absorb the paisas/rupees and flat/nested differences. Components import only from `@/lib/api`. Letting `Wire*` escape that directory is what reintroduces the mismatches the layer was built to prevent.
 
+### An order's delivery address is a snapshot, not a link
+
+`Order.addressId` is provenance — *which* saved address the customer picked. It
+is **not** what any screen renders. The ten `shipping*` columns on `orders`
+are, and they are written once at checkout and never touched again.
+
+`addresses` is mutable. Reading an order's address through the relation meant a
+customer editing their saved address after moving house silently rewrote the
+delivery address on every order they had ever placed, including delivered ones
+— where the recorded destination is the only evidence there is in a dispute
+about a misdelivery. Deleting a saved address had the same effect, minus the
+new address.
+
+Three consequences to preserve:
+
+- **Write the snapshot in `resolveAddress`/`create`**, from `ADDRESS_SNAPSHOT_SELECT`.
+  Selecting only `{ id: true }` there — which is what that query used to do —
+  is how this quietly becomes a link again.
+- **Read it in `adaptShippingAddress`** (storefront) and `shipTo` (admin). Both
+  fall back to the `address` relation *last*, and only for orders served
+  mid-rolling-deploy by an instance predating the columns.
+- **Columns, not JSON.** The admin order list filters on city and province; a
+  JSON column would have meant rewriting that filter against an unindexed
+  value. `orders_shippingCity_idx` and `orders_shippingProvince_idx` exist for it.
+
+`POST /orders/track` must continue to expose none of them — see *Order tracking*.
+
+### Address defaults are two flags, demoted independently
+
+`isDefaultShipping` and `isDefaultBilling`. `UsersService.demoteDefaults` clears
+only the flag the write is claiming, and excludes the row being updated from its
+own sweep.
+
+Clearing both whenever either is set would mean saving a default *delivery*
+address silently stripped the customer's default *billing* address — a change
+they never asked for, on a row they were not editing. Both sweeps are scoped by
+`userId`: Prisma reads `where: { userId: undefined }` as `where: {}`, which
+would clear the flag on every address row in the table.
+
+**Billing is stored but read by nothing.** Cash on delivery is the only enabled
+payment method, so no surface collects a billing address; the order detail page
+says "same as the delivery address" rather than printing the same six lines
+twice under two headings. The column exists so that adding a gateway is not also
+a migration against `addresses` — the table every checkout reads.
+
+Checkout's "make this my default" claims **shipping only**, for the same reason:
+it is collecting a delivery address, and there is no billing address to attach
+the other flag to.
+
+### `country` is stored with a default, not asked for
+
+`Address.country` is `NOT NULL DEFAULT 'Pakistan'`; `DEFAULT_COUNTRY` in
+`lib/address.ts` mirrors it — change one, change both, or a form submitted
+without a country lands on a different value than the one it displayed.
+
+It lives in `lib/address.ts` rather than `lib/validation.ts` because
+`adapters.ts` needs it and `validation.ts` already imports from `lib/api` —
+putting it there closes an import cycle through the constant's own initialiser,
+which under ESM is a temporal-dead-zone crash rather than a warning.
+
+`SUPPORTED_COUNTRIES` in `common/validation.ts` is enforced with `@IsIn` on both
+address DTOs, for the same reason `ENABLED_PAYMENT_METHODS` is: offering one
+option in the storefront picker does not stop a hand-rolled request from saving
+an address the shop cannot deliver to, and the first anyone would learn of it is
+a courier refusing the parcel.
+
+`formatAddressLines` renders the country **only when it is not the default**. A
+line reading "Pakistan" under every address on a Pakistan-only shop is noise on
+a phone-sized card; the day the shop ships abroad it appears exactly where it
+matters with no code change.
+
+### `Address.label` is free text; `labelType` is the enum
+
+Both, deliberately. `labelType` (`home` / `office` / `other`) is what code
+groups and filters on. `label` is the display name, and is the whole point of
+`other` — rows saved before the enum hold what customers actually typed
+("Warehouse", "Ammi's house"), and collapsing those into a category would
+destroy them. The migration derives `labelType` case-insensitively and sends
+anything unrecognised to `other`, where the original string stays visible.
+
+**Checkout sends both.** It sets `label` to the city (so a one-off delivery to a
+relative is not filed as the customer's home address) *and* `labelType: 'other'`.
+Sending only the first undoes the second: `labelType` defaults to `home` in the
+schema, so the saved address would show a "Home" chip next to the customer's
+actual home address. `OrderAddressDto` accepts both, mirroring `CreateAddressDto`.
+
+### A checkout address is only saved when the customer asks
+
+`CreateOrderDto.saveAddress` decides whether an inline address is written with
+`userId` set or `NULL`. Unowned rows behave exactly like guest addresses: they
+exist to be referenced by their order and are invisible to
+`/users/me/addresses`.
+
+Every signed-in checkout used to write an owned row, so a customer who typed a
+one-off delivery address — a gift to a relative, a hotel in Makkah — found it
+filed in their address book, and someone ordering monthly accumulated twelve
+near-duplicates of their own home address.
+
+`setDefaultAddress` only applies alongside `saveAddress`: an order-scoped row is
+not in the address book to be defaulted to.
+
 ### Order totals are recomputed server-side
 
 Checkout sends only variant IDs and quantities. The API recomputes every price, discount, shipping cost, surcharge and tax from the database. Nothing the browser believes about the total can influence what is charged. **Preserve this.**
@@ -135,6 +236,83 @@ Two further rules that follow from it:
 Fallbacks live in exactly one place: `CONFIG_FALLBACK` in `adapters.ts`, mirroring the seeded catalogue. `SETTINGS_FALLBACK` is derived as `adaptSettings({})` rather than written out, because a second hand-written copy in rupees is a second place to drift. `adapters.test.ts` pins those numbers to the seed.
 
 Known exception: `app/[locale]/returns/page.tsx` quotes a ₨250–₨400 courier pickup range. That is a third-party charge the shop does not set and has no config key, so it stays prose.
+
+### A menu item's href is built in the adapter, never in a component
+
+The API returns *what* an item points at (`linkType` plus a slug or a URL). Route
+shapes and the locale prefix are storefront facts, so `adaptMenuItem` in
+`lib/api/adapters.ts` is the only place that turns one into a href — and the only
+place that composes `rel`.
+
+Same reasoning as `getDefaultVariant` and `adaptImages`: five surfaces render menu
+items, and "which route does a `collection` go to" has to be one answer. The three
+surfaces that once decided independently which variant represents a product
+disagreed, and shipped a card advertising ₨1,199 that opened at ₨4,999.
+
+`adaptMenuItem` returns `null` for an item that cannot produce a usable
+destination — a `category` row with no slug, a `custom` row holding
+`javascript:`. Dropping it is deliberate: the alternative is an anchor to
+`/shop/undefined` in the header, and a dead control is worse than one link fewer.
+
+### A staff-editable link field is an open redirect waiting to happen
+
+`INTERNAL_PATH_REGEX` is mirrored in `apps/api/src/menus/menu-constants.ts` and
+`apps/storefront/src/lib/menu-constants.ts`, and `menu-constants.test.ts` pins the
+two to the same source string so they cannot drift silently.
+
+Both exclusions are load-bearing. `//evil.example` reads as a path, passes
+`startsWith('/')`, and the browser resolves it to another host — the hole
+`safeNextPath` already closed on `?next=`. `/\evil.example` resolves *identically*,
+because URL parsing for a special scheme normalises `\` to `/`, while sailing past
+a `(?!\/)` lookahead. The API validates on write; the adapter re-checks, because
+it is the boundary components trust and a row can predate a check.
+
+### Menu audience is resolved server-side, never from a parameter
+
+`visibility` (`everyone` / `guest` / `customer` / `retail` / `wholesale`) is
+matched against an audience derived from the authenticated principal via
+`OptionalJwtAuthGuard` and a `User.customerGroup` lookup — not from a query
+string, which would put "wholesale only" one URL away from public.
+
+The consequence is that a **server render is always the guest view**: it has to be
+anonymous for the payload to be cached and shared, which is also the right thing
+for a crawler to receive. `MenuProvider` re-fetches with the customer's token once
+auth has hydrated. It waits on `isHydrating` for the same reason `RequireAuth`
+does.
+
+`device`, by contrast, is *not* filtered server-side. The viewport is a
+client-side fact, so `device` ships in the payload and the storefront applies it —
+by filtering where the container is itself viewport-scoped (`DesktopNav`,
+`MobileNav`), and by a responsive class (`deviceClass`) where it is not (the
+footer, a sidebar). Filtering the footer to one viewport made a `device: 'mobile'`
+link invisible on every screen there is.
+
+### Menu caching holds unfiltered rows
+
+`menu:rows:<location>` caches the raw rows; audience and schedule filtering runs
+per request. Caching the finished payload per (location, audience) would make
+`publishUntil` inexact by up to the TTL — an item scheduled to stop at 23:59 would
+keep rendering until the entry expired — and multiply the keys a write has to
+invalidate. Filtering an already-loaded array is microseconds.
+
+**A menu write must purge both caches.** The API's Redis entry is one; Next's
+`fetch` cache in the storefront container is the other, and nothing in Redis can
+reach it. `StorefrontRevalidationService` POSTs to `/api/revalidate-menus`, which
+calls `revalidateTag('menus')`. It never throws — the write already succeeded, and
+the change still lands at the TTL.
+
+Absence is cached too, briefly: `sidebar` has no seeded row and the layout asks
+for it on every render. **The marker is a sentinel object, not `null`** —
+`cache-manager-redis-store` refuses to store `null` (its `isCacheable` default
+throws on it) and `cacheSet` swallows the throw, so a cached `null` would appear
+to work, do nothing on Redis, and function only on the in-memory fallback, i.e.
+only while Redis was down.
+
+`fetchMenu` passes `signal: null` to opt out of `apiFetch`'s default timeout,
+because Next treats a `fetch` carrying an `AbortSignal` as uncacheable — which
+would leave the `menus` tag attached to nothing.
+
+---
 
 ---
 
@@ -187,6 +365,71 @@ Throttled at 5/minute. POST rather than GET so the number stays out of URLs, bro
 
 The number format is validated in two mirrored places — `ORDER_NUMBER_REGEX` in `apps/api/src/orders/dto/track-order.dto.ts` and in `apps/storefront/src/lib/validation.ts`. The alphabet is Crockford Base32, so `I`, `L`, `O` and `U` are deliberately absent.
 
+### My Orders
+Server-side paginated (`GET /orders`, 10 per page, newest first), with per-order
+payment status, a fulfilment state **derived from `OrderStatus`** rather than
+stored, shipping method, courier tracking number, item count and reorder.
+
+There is no `fulfilmentStatus` column and no courier model: one warehouse, no
+carrier integration, no partial shipments. A second status field would have to
+be maintained by hand alongside the first and would be wrong the first time
+somebody forgot. `fulfilmentState()` in `lib/order-status.ts` is the single
+place that derives it, and the single place that would start reading a real
+shipment model if the enterprise-OMS work in `TASKS.md` ever lands.
+
+`FULFILMENT_STEPS` mirrors the forward path of `ORDER_STATUS_FLOW` in
+`orders.service.ts` — **change one, change both**, or a customer's live order
+renders as sitting at a step that no longer exists. `cancelled` and `refunded`
+are deliberately absent from it: they are exits from the track, not points
+along it, so a terminal order gets its real history instead of a progress bar
+pointing at a delivery that will never come.
+
+Payment status is rendered as its own badge, never merged into the fulfilment
+one. A COD order is `delivered` and `unpaid` for as long as it takes the courier
+to remit the cash, and one combined badge told customers their delivered order
+was unpaid — which reads as a demand for money they have already handed over.
+
+### Saved addresses and checkout autofill
+`Home`/`Office`/`Other` label chips backed by the `labelType` enum, `area`,
+`country`, optional per-address `email` (the recipient is not always the account
+holder), and separate shipping and billing default flags.
+
+A signed-in customer's default address is prefilled on arrival at checkout, with
+a picker above the form, a Change Address panel behind it, and an Add New
+Address dialog that saves to the account without leaving the page. The whole
+address list arrives with the checkout page load and is held in one TanStack
+Query cache, so switching between addresses is a state change, not a round trip.
+
+**`AddressForm` is one component serving three surfaces** — create, edit, and
+checkout's add-new. A second address form in the checkout tree would be a second
+place for the field list and the validation wiring to drift, and the one that
+drifts is always the one nobody is looking at.
+
+An unedited saved address is sent as `addressId`; anything typed or edited is
+sent inline. Typing over a prefilled address clears `selectedAddressId`, so the
+edit applies to that order only and the saved row is left alone.
+
+Guests see no picker and no save-to-account tickbox — there is no account behind
+either, and an empty picker urging them to sign in turns a working guest
+checkout into a nag at the worst possible moment.
+
+`formatAddressLines` in `lib/address.ts` is the single definition of how an
+address renders. Five surfaces show one, and they had each assembled their own
+subset — the visible symptom was `area` appearing on some screens and not
+others, which reads to a customer as data that has been lost.
+
+**Clearing an optional field sends `null`, not `undefined`.** `addressLine2`,
+`area`, `postalCode` and `email` on `AddressInput` are `string | null`, wider
+than `Address`'s `string | undefined`, because `updateAddress` PATCHes and the
+API treats an omitted key as "leave alone" — the same rule `MenuItemInput`
+already follows. `AddressForm` used to send `undefined` for an emptied field;
+`apiFetch` bodies go through `JSON.stringify`, which drops a key whose value
+is `undefined`, so the PATCH never carried the field and the old value stayed
+in the database — invisible until the address list was refetched and the
+"cleared" field reappeared. `CreateAddressDto`'s matching fields are typed
+`string | null` for the same reason; `@IsOptional()` already tolerated `null`
+before this fix, it just never received one.
+
 ### Returns
 Customer-facing half: eligible orders, request creation, own-request listing. 7-day window from the recorded delivery timeline entry. Admin moderation is built — `PATCH /returns/admin/:id/status` with a server-enforced transition flow (`RETURN_STATUS_FLOW`: requested → approved/rejected → received → refunded), plus the admin queue screen with a status filter.
 
@@ -206,6 +449,50 @@ Key/value config with Redis caching, typed reads, admin CRUD, and a public endpo
 `AuditLog` (`apps/api/src/audit-log`) is a generic, append-only trail — `entityType`/`entityId` are free text rather than an enum, so a new caller needs no migration, only a new value. `AuditLogService.record()` never throws: a write that succeeded but couldn't be logged is still a write that succeeded, so a logging failure is reported to the error log rather than failing the request. `GET /audit-logs` (admin/manager) lists it, optionally narrowed to one entity.
 
 `SettingsService.create/update/remove` are the first caller — `actor` (id, name, role, IP) is now a required parameter, resolved in `SettingsController` from `@CurrentUser()` and `req.ip`, and every write records a before/after snapshot. The admin Store Settings screen surfaces this per row and in aggregate via a "History" panel.
+
+### Navigation menus
+Header, footer, mobile drawer and sidebar navigation is rendered from the
+database, as are the mega panels that hang off a header item. (`MenuLocation`
+also has a `mega` value for a standalone mega menu; nothing mounts one yet — a
+mega *panel* comes from a header item's `isMegaMenu` flag, not from that
+location.) `Menu` (one row per `MenuLocation`, `location` UNIQUE) plus
+`MenuItem.parentId`, a self-relation with no depth cap, mirroring `Category`. As
+there, the tree is assembled in memory from one flat SELECT rather than by nested
+Prisma `include`s, which silently truncate.
+
+`linkType` discriminates what an item points at — `category`, `product`,
+`cms_page`, `brand`, `collection`, `custom` (internal path), `external`, and
+`heading` (a label with children and no destination). Each item also carries
+per-locale titles, badges and `title` attributes, an icon and image, `visibility`,
+`device`, a `publishFrom`/`publishUntil` window, the SEO trio
+(`relAttribute`/`noFollow`/`openInNewTab`), and — when `isMegaMenu` — a layout, a
+column count and a `megaConfig` JSON blob holding featured slugs, a banner and
+content blocks.
+
+Public reads: `GET /menus/header`, `/footer`, `/mobile`, `/location/:location`,
+`/:id/items`. Admin CRUD and reorder under `/menus` and `/menus/admin/*`, guarded
+by `STAFF_MANAGE` and audit-logged. `POST /menus/admin/publish` is guarded but not
+logged — it only purges caches, and every write that changes something is already
+logged by the mutation itself. `src/menus/default-menus.ts` is a
+**seed list, not a schema**, holding the navigation that used to be hardcoded.
+
+The storefront layout fetches every menu once and shares them through
+`MenuProvider`; `components/navigation/*` renders them. Staff edit them from the
+admin **Menus** screen (`apps/admin/src/app/(dashboard)/menus`) — one drag-and-drop
+tree per location, following the categories pattern, against
+`POST /menus/admin/reorder`.
+
+Two rules that screen exists to respect, and that broke when it did not: a PATCH
+distinguishes an **omitted** key ("leave alone") from **`null`** ("clear it"), so
+every optional field in `MenuItemInput` is nullable and a cleared input maps to
+`null` — mapping it to `undefined` made fifteen fields set-once. And `megaConfig`
+is only sent when the admin actually edited it, because the API normalises on read
+(capping lists, dropping unknown keys), so re-sending an untouched config would
+write the trimmed version back. No navigation array
+remains in `header.tsx`, `mega-menu.tsx` (deleted) or `footer.tsx`. The exceptions,
+recorded in TASKS.md rather than left implicit, are the account sidebar, the mobile
+bottom bar and the header's utility links — auth-guarded chrome whose existence is
+decided by code, not by merchandising.
 
 ### Also built
 Coupons, blog with category filtering, wishlist, saved addresses, profile, stock notifications, media upload, admin products and orders.
@@ -425,6 +712,32 @@ The cost is a migration that rewrote every historical order number, and a number
 ### There is no `returned` order status; `refunded` is terminal
 The admin once carried a `returned` value in its `OrderStatus` union that the Prisma enum never had, so choosing it produced a 400 from the status endpoint. Rather than add the enum value, a physical return is modelled where it belongs — the `Return` record and its own `ReturnStatus` lifecycle — and the order moves to `refunded` when a refund is issued. Keeping return state out of `OrderStatus` avoids conflating "the parcel came back" with "money went out", which are separate events with separate approvals.
 
+### The order address is copied onto `orders` as columns
+
+Considered three shapes. **Cloning the `Address` row per order** was rejected
+because it leaves a row per order in a table the customer's address book also
+reads from, distinguishable only by `userId IS NULL`. **A JSON snapshot column**
+was rejected because the admin order list filters on city and province, and
+those filters would have moved from an indexed relation to an unindexed JSON
+extraction.
+
+Real columns let that filter move onto `orders` unchanged, and made the filter
+*more* correct on the way: staff searching "Lahore" want the orders that were
+**sent** to Lahore, not the orders whose customer happens to live there now.
+
+The cost is ten columns on a wide table and a backfill that has to run in the
+same migration as the code change — deploying the code first would blank the
+delivery address on every historical order at the moment the storefront started
+preferring the snapshot.
+
+### Billing addresses are out of scope while the shop is COD-only
+
+No `isDefaultBilling`, no billing selector, no billing snapshot. Cash on
+delivery is the only enabled payment method, so a billing address would be a
+field with no consumer, collected from every customer, stored forever. It
+belongs with the payment-gateway work in `TASKS.md`, which is where the first
+thing that actually needs it will appear.
+
 ### The wishlist requires an account
 Considered keeping it device-local for guests and syncing on sign-in. Rejected: a wishlist that silently disappears when someone clears their browser or picks up a different phone is worse than one that asks for an account first, and the "saved" state was a promise the local version could not keep.
 
@@ -443,6 +756,43 @@ Not duplication for its own sake: the storefront copy catches a bad value before
 ### The audit log is one generic table, not one per entity
 `entityType` is a plain string column rather than a Prisma enum or a separate table per feature. An enum would need a migration every time a new mutation started logging; a table per entity would mean the admin "who changed this" screen has to know which table to query before it can ask. The cost is that `before`/`after` are untyped `Json?` — acceptable, because the reader is a human looking at a diff, not code branching on the shape.
 
+### Menus are their own tables, not `Setting` rows and not `Category`
+
+A menu is an ordered, nestable list whose items each carry a link target, a
+schedule, an audience and a layout. A key/value store can hold that only as one
+opaque JSON blob that nothing can reorder, validate or query — the same reasoning
+that kept the footer out of `settings` in the first place.
+
+Not `Category` either, even though most items point at one: an item can point at a
+product, a CMS page, a brand, a collection or an arbitrary URL, and the same
+category can appear in several menus at different depths. Merchandising order is
+not catalogue structure.
+
+### `heading` is a link type, not a `custom` link to `#`
+
+The alternative staff reach for is `custom` with `#`, which renders a real anchor
+that jumps to the top of the page when clicked and is announced to a screen reader
+as a link to nowhere. A footer column title is a label; the schema says so.
+
+### Deleting a menu item deletes its subtree
+
+`ON DELETE CASCADE` on `menu_items.parent_id`. `SET NULL` would silently promote
+every orphaned child to a top-level nav entry, so removing an "Ihram" dropdown
+would scatter its six children across the header. `RESTRICT` — Prisma's default —
+would refuse with a raw foreign-key 500.
+
+A **menu** row, by contrast, is a real delete rather than a soft one, unlike
+`CategoriesService.remove`. Nothing references a menu, and `isActive` already
+covers "switch it off but keep it".
+
+### `User.customerGroup` exists so the wholesale/retail visibility rules are real
+
+Added rather than storing the enum values and leaving them inert. A visibility
+option an admin can select that never matches anyone is a dead control. It is NOT
+settable from the customer signup flow — staff assign it — and it is read from the
+database per request rather than carried on the JWT, so moving a customer to
+wholesale takes effect on their next page load instead of at their next login.
+
 ### `AuditActor` is a required parameter, not inferred from a request-scoped provider
 `SettingsService.create/update/remove` take `actor: AuditActor` explicitly rather than pulling the current admin from a NestJS request-scoped injection. Request-scoped providers make every consumer of that provider request-scoped too, which is a performance cost (a new instance per request) paid by the whole dependency graph for a value only mutations need. The explicit parameter also makes "which caller forgot to pass an actor" a compile error instead of a runtime `undefined`.
 
@@ -453,6 +803,12 @@ Not duplication for its own sake: the storefront copy catches a bad value before
 `.env` at the repo root, loaded by the API via `ConfigModule` (`envFilePath: '../../.env'`).
 
 Required: `DATABASE_URL`, `JWT_SECRET`, `ADMIN_JWT_SECRET` (must differ), `REDIS_HOST`, `REDIS_PORT`, `STOREFRONT_URL`, `ADMIN_URL`, `NEXT_PUBLIC_API_URL`, `INTERNAL_API_URL`.
+
+Optional: `MENU_REVALIDATE_SECRET` (shared by both apps — unset means menu changes
+appear at the cache TTL rather than immediately, which is a supported state) and
+`INTERNAL_STOREFRONT_URL` (where the API reaches the storefront to send that call;
+inside Docker it should stay on the compose network rather than going out through
+nginx and back, same as `INTERNAL_API_URL`).
 
 `NEXT_PUBLIC_API_URL` is inlined at build time and must be passed as a Docker **build arg**, not only as a runtime environment variable.
 

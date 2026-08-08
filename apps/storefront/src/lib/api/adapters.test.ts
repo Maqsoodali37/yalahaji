@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { adaptProduct, adaptSettings } from './adapters'
+import { adaptProduct, adaptSettings, adaptOrder } from './adapters'
 import { SETTINGS_FALLBACK } from './catalog'
-import type { WireProduct, WireProductMedia } from './wire'
+import type { WireProduct, WireProductMedia, WireOrder } from './wire'
 
 describe('adaptSettings', () => {
   it('converts money from paisas to rupees', () => {
@@ -192,5 +192,113 @@ describe('adaptProduct — images', () => {
   it('survives a product with no images at all', () => {
     // Storefront renders the brand mark; it must not throw first.
     expect(adaptProduct(wireProduct([])).images).toEqual([])
+  })
+})
+
+describe('adaptOrder — delivery address', () => {
+  /**
+   * The saved address the order was placed against, as it looks *today* —
+   * after the customer moved house and edited it.
+   */
+  const editedSavedAddress = {
+    id: 'addr-1',
+    label: 'Home',
+    fullName: 'Muhammad Ali',
+    phone: '+923009999999',
+    email: null,
+    addressLine1: 'Flat 9, New Block',
+    addressLine2: null,
+    area: null,
+    city: 'Islamabad',
+    province: 'Punjab',
+    country: 'Pakistan',
+    postalCode: null,
+    labelType: 'home' as const,
+    isDefaultShipping: true,
+    isDefaultBilling: false,
+  }
+
+  function order(overrides: Partial<WireOrder> = {}): WireOrder {
+    return {
+      id: 'o-1',
+      number: 'YH-2026-1001-K7QX9M',
+      status: 'delivered',
+      paymentMethod: 'cod',
+      paymentStatus: 'paid',
+      shippingMethod: 'standard',
+      subtotal: 100000,
+      shippingCost: 0,
+      discount: 0,
+      tax: 0,
+      total: 100000,
+      trackingNumber: null,
+      notes: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      items: [],
+      timeline: [],
+      shippingLabel: 'Home',
+      shippingFullName: 'Muhammad Ali',
+      shippingPhone: '+923001234567',
+      shippingEmail: null,
+      shippingAddressLine1: 'House 42, Street 5',
+      shippingAddressLine2: null,
+      shippingArea: 'DHA Phase 5',
+      shippingCountry: 'Pakistan',
+      shippingCity: 'Lahore',
+      shippingProvince: 'Punjab',
+      shippingPostalCode: '54000',
+      address: editedSavedAddress,
+      ...overrides,
+    } as WireOrder
+  }
+
+  it('renders the snapshot, not the saved address it was copied from', () => {
+    // This is the whole point of the snapshot. Reading `address` here meant a
+    // customer moving house rewrote the delivery address on every order they
+    // had ever placed — including this delivered one, whose recorded
+    // destination is the only evidence of where the goods actually went.
+    const adapted = adaptOrder(order())
+
+    expect(adapted.shippingAddress.city).toBe('Lahore')
+    expect(adapted.shippingAddress.phone).toBe('+923001234567')
+    expect(adapted.shippingAddress.area).toBe('DHA Phase 5')
+    // Not Islamabad, which is where they live now.
+    expect(adapted.shippingAddress.city).not.toBe(editedSavedAddress.city)
+  })
+
+  it('never marks a snapshot as a default address', () => {
+    // An order address is a historical record, not a preference — a "Default"
+    // badge against a snapshot the customer has since replaced is a lie.
+    expect(adaptOrder(order()).shippingAddress.isDefaultShipping).toBe(false)
+    expect(adaptOrder(order()).shippingAddress.isDefaultBilling).toBe(false)
+  })
+
+  it('falls back to the linked address only when there is no snapshot', () => {
+    // Covers a rolling deploy: the migration has run but an old API instance
+    // is still serving orders without the shipping* columns.
+    const adapted = adaptOrder(order({ shippingFullName: null }))
+
+    expect(adapted.shippingAddress.city).toBe('Islamabad')
+    // Even the fallback must not inherit the saved row's default flag — that
+    // row is a live preference, this is a historical record.
+    expect(adapted.shippingAddress.isDefaultShipping).toBe(false)
+  })
+
+  it('gives components an empty address rather than null for a bare order', () => {
+    // Components read fields off `shippingAddress` unconditionally; null here
+    // is a crash on the server render, which the browser reports as a
+    // client-side exception rather than anything diagnosable.
+    const adapted = adaptOrder(order({ shippingFullName: null, address: null }))
+
+    expect(adapted.shippingAddress.fullName).toBe('')
+    expect(adapted.shippingAddress.city).toBe('')
+  })
+
+  it('defaults a missing paymentStatus to unpaid', () => {
+    // "Unpaid" is the safe reading of a COD order nobody has confirmed
+    // collection on; `undefined` renders as a blank badge.
+    const adapted = adaptOrder(order({ paymentStatus: undefined as never }))
+    expect(adapted.paymentStatus).toBe('unpaid')
   })
 })

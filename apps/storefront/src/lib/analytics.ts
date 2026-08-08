@@ -12,6 +12,8 @@
  * the visitor says yes.
  */
 
+import { persistConsent, type ConsentChoice } from './consent'
+
 /**
  * Read at module scope, not inside the helpers. NEXT_PUBLIC_* values are
  * inlined at build time, and a bare `process.env.X` is the only form the Next
@@ -25,10 +27,21 @@ export const isAnalyticsEnabled = GA_MEASUREMENT_ID.length > 0
 /** GA4 wants a three-letter ISO-4217 code; the store prices everything in PKR. */
 export const CURRENCY = 'PKR'
 
-/** localStorage key holding the visitor's consent decision. */
-export const CONSENT_STORAGE_KEY = 'yh-consent-v1'
-
-export type ConsentChoice = 'granted' | 'denied'
+/**
+ * Consent storage lives in lib/consent.ts — it has to be readable from the
+ * inline <head> snippet and from the server, neither of which should pull in
+ * the gtag helpers below. Re-exported here so existing call sites keep their
+ * single import.
+ */
+export {
+  CONSENT_STORAGE_KEY,
+  CONSENT_COOKIE_NAME,
+  CONSENT_VERSION,
+  readStoredConsent,
+  hasAnsweredConsent,
+  consentReaderSnippet,
+} from './consent'
+export type { ConsentChoice, ConsentState } from './consent'
 
 type GtagArgs =
   | ['js', Date]
@@ -70,19 +83,6 @@ export function trackEvent(
 
 // ── Consent ───────────────────────────────────────────────────────────────────
 
-/** The stored decision, or null when the visitor has not chosen yet. */
-export function readStoredConsent(): ConsentChoice | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const value = window.localStorage.getItem(CONSENT_STORAGE_KEY)
-    return value === 'granted' || value === 'denied' ? value : null
-  } catch {
-    // Safari private mode throws on localStorage access rather than returning
-    // null. Treat it as "no decision recorded" and keep consent denied.
-    return null
-  }
-}
-
 /**
  * Records the decision and tells Google about it.
  *
@@ -91,12 +91,7 @@ export function readStoredConsent(): ConsentChoice | null {
  * when ad_storage is granted.
  */
 export function setConsent(choice: ConsentChoice): void {
-  try {
-    window.localStorage.setItem(CONSENT_STORAGE_KEY, choice)
-  } catch {
-    // Storage unavailable — the banner reappears next visit, which is the
-    // conservative failure mode.
-  }
+  persistConsent(choice)
 
   push('consent', 'update', {
     analytics_storage: choice,
@@ -104,6 +99,17 @@ export function setConsent(choice: ConsentChoice): void {
     ad_user_data: choice,
     ad_personalization: choice,
   })
+}
+
+/**
+ * Records that the banner was closed without an answer.
+ *
+ * No consent update is sent: the Consent Mode default is already denied and
+ * must stay there. This only stops the banner reappearing on the next page
+ * load — the visitor is asked again once the dismissal expires.
+ */
+export function dismissConsent(): void {
+  persistConsent('dismissed')
 }
 
 // ── Page views ────────────────────────────────────────────────────────────────

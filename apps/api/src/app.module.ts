@@ -22,6 +22,7 @@ import { SettingsModule } from './settings/settings.module'
 import { StockNotificationsModule } from './stock-notifications/stock-notifications.module'
 import { HealthModule } from './health/health.module'
 import { AuditLogModule } from './audit-log/audit-log.module'
+import { MenusModule } from './menus/menus.module'
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { AuditLogModule } from './audit-log/audit-log.module'
     StockNotificationsModule,
     HealthModule,
     AuditLogModule,
+    MenusModule,
   ],
   providers: [
     // ThrottlerModule.forRoot() only supplies configuration — without this

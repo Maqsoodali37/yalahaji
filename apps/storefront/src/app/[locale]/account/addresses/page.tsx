@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { MapPin, Plus, Pencil, Trash2, AlertCircle, Loader2 } from 'lucide-react'
+import { MapPin, Plus, Pencil, Trash2, Loader2, Star } from 'lucide-react'
 import {
   fetchAddresses,
   createAddress,
@@ -13,7 +13,8 @@ import {
 } from '@/lib/api'
 import { AddressForm } from '@/components/account/address-form'
 import { AccountQueryError } from '@/components/account/query-error'
-import type { Address } from '@/types'
+import { formatAddressLines } from '@/lib/address'
+import type { Address, AddressDefaultKind } from '@/types'
 
 export default function AddressesPage() {
   const queryClient = useQueryClient()
@@ -47,6 +48,29 @@ export default function AddressesPage() {
     // Refetch rather than patching the cache: saving an address as the default
     // demotes whichever one held it, and only the server knows which.
     onSuccess: invalidate,
+  })
+
+  /**
+   * Shipping and billing defaults move independently.
+   *
+   * The API demotes only the flag being claimed, so setting a default delivery
+   * address cannot silently strip the customer's default billing address —
+   * a change they never asked for, on a row they were not editing.
+   */
+  const makeDefault = useMutation({
+    mutationFn: ({ id, kind }: { id: string; kind: AddressDefaultKind }) =>
+      updateAddress(
+        id,
+        kind === 'shipping' ? { isDefaultShipping: true } : { isDefaultBilling: true },
+      ),
+    onSuccess: () => {
+      setActionError('')
+      return invalidate()
+    },
+    onError: (e) =>
+      setActionError(
+        e instanceof ApiError ? e.message : 'Could not change your default address.',
+      ),
   })
 
   const remove = useMutation({
@@ -100,6 +124,12 @@ export default function AddressesPage() {
         </p>
       )}
 
+      {/*
+        Gated on !isLoading && !isError so a failed fetch never renders as
+        "no saved addresses" — telling someone their saved addresses are gone
+        when the API simply did not answer is the worst reading of an empty
+        array, and the one they will believe.
+      */}
       {!isLoading && !isError && addresses.length === 0 && (
         <div className="bg-white border border-line rounded-md p-12 text-center">
           <MapPin className="w-12 h-12 text-stone mx-auto mb-4" />
@@ -115,23 +145,72 @@ export default function AddressesPage() {
       {addresses.map((addr) => (
         <div key={addr.id} className="bg-white border border-line rounded-md p-5 flex gap-4">
           <MapPin className="w-5 h-5 text-green flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <span className="text-[11px] font-bold uppercase tracking-wider bg-paper border border-line text-stone px-1.5 py-0.5 rounded-sm">
+                {addr.label}
+              </span>
               <p className="font-bold text-ink">{addr.fullName}</p>
-              {addr.isDefault && (
+              {addr.isDefaultShipping && (
                 <span className="text-[10px] bg-green text-white px-1.5 py-0.5 rounded-sm font-bold">
-                  Default
+                  Default delivery
+                </span>
+              )}
+              {addr.isDefaultBilling && (
+                <span className="text-[10px] bg-stone/15 text-stone px-1.5 py-0.5 rounded-sm font-bold">
+                  Default billing
                 </span>
               )}
             </div>
             <p className="text-sm text-stone">{addr.phone}</p>
-            <p className="text-sm text-stone">{addr.addressLine1}</p>
-            <p className="text-sm text-stone">
-              {addr.city}, {addr.province}
-              {addr.postalCode ? ` ${addr.postalCode}` : ''}
-            </p>
+            {addr.email && <p className="text-sm text-stone">{addr.email}</p>}
+            {formatAddressLines(addr).map((line) => (
+              <p key={line} className="text-sm text-stone">
+                {line}
+              </p>
+            ))}
+
+            {/*
+              Only offered on non-default rows. A "Set as default" control on
+              the address that already is one is a dead control — it either
+              does nothing or demotes and re-promotes the same row.
+            */}
+            <div className="flex gap-4 mt-2 flex-wrap">
+              {(['shipping', 'billing'] as const).map((kind) => {
+                const isSet =
+                  kind === 'shipping' ? addr.isDefaultShipping : addr.isDefaultBilling
+                // Not offered on the row that already holds it — a control
+                // that either does nothing or demotes and re-promotes the same
+                // row is a dead control.
+                if (isSet) return null
+
+                const pending =
+                  makeDefault.isPending &&
+                  makeDefault.variables?.id === addr.id &&
+                  makeDefault.variables?.kind === kind
+
+                return (
+                  <button
+                    key={kind}
+                    onClick={() => {
+                      setActionError('')
+                      makeDefault.mutate({ id: addr.id, kind })
+                    }}
+                    disabled={makeDefault.isPending}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-green hover:underline disabled:opacity-60"
+                  >
+                    {pending ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Star className="w-3 h-3" />
+                    )}
+                    Set as default {kind === 'shipping' ? 'delivery' : 'billing'}
+                  </button>
+                )
+              })}
+            </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-shrink-0">
             <button
               onClick={() => setEditing({ address: addr })}
               aria-label={`Edit address for ${addr.fullName}`}
@@ -177,6 +256,15 @@ export default function AddressesPage() {
             <p className="text-sm text-stone">
               {confirmingDelete.fullName} — {confirmingDelete.addressLine1},{' '}
               {confirmingDelete.city}
+            </p>
+            {/*
+              Stated outright because it is the question people actually have.
+              Orders carry their own frozen copy of the address, so deleting
+              this row cannot change where a past parcel is recorded as going.
+            */}
+            <p className="text-xs text-stone">
+              Past orders keep the address they were delivered to — this only
+              removes it from your address book.
             </p>
             <div className="flex gap-3">
               <button

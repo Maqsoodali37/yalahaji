@@ -34,6 +34,83 @@ function randomOrderToken(): string {
   return out
 }
 
+/**
+ * The address fields copied onto an order at checkout.
+ *
+ * Selected explicitly rather than taking the whole row: `userId`, the default
+ * flags and the timestamps belong to the saved address, not to the order, and
+ * spreading them into the order payload is how an unrelated column ends up
+ * being written by accident.
+ */
+const ADDRESS_SNAPSHOT_SELECT = {
+  id: true,
+  label: true,
+  fullName: true,
+  phone: true,
+  email: true,
+  addressLine1: true,
+  addressLine2: true,
+  area: true,
+  country: true,
+  city: true,
+  province: true,
+  postalCode: true,
+} as const
+
+type AddressSnapshotRow = {
+  id: string
+  // NOT NULL with a default in the schema, so this is `string`, not
+  // `string | null` — typing it wider pushed a pointless `?? ''` onto every
+  // consumer of the snapshot.
+  label: string
+  fullName: string
+  phone: string
+  email: string | null
+  addressLine1: string
+  addressLine2: string | null
+  area: string | null
+  country: string
+  city: string
+  province: string
+  postalCode: string | null
+}
+
+/** The `shipping*` columns on `Order`, ready to spread into a create. */
+export interface OrderShippingSnapshot {
+  shippingLabel: string
+  shippingFullName: string
+  shippingPhone: string
+  shippingEmail: string | null
+  shippingAddressLine1: string
+  shippingAddressLine2: string | null
+  shippingArea: string | null
+  shippingCountry: string
+  shippingCity: string
+  shippingProvince: string
+  shippingPostalCode: string | null
+}
+
+interface ResolvedOrderAddress {
+  addressId: string
+  snapshot: OrderShippingSnapshot
+}
+
+function toShippingSnapshot(a: AddressSnapshotRow): OrderShippingSnapshot {
+  return {
+    shippingLabel: a.label,
+    shippingFullName: a.fullName,
+    shippingPhone: a.phone,
+    shippingEmail: a.email,
+    shippingAddressLine1: a.addressLine1,
+    shippingAddressLine2: a.addressLine2,
+    shippingArea: a.area,
+    shippingCountry: a.country,
+    shippingCity: a.city,
+    shippingProvince: a.province,
+    shippingPostalCode: a.postalCode,
+  }
+}
+
 const ORDER_INCLUDE = {
   items: {
     include: {
@@ -153,7 +230,7 @@ export class OrdersService {
       )
     }
 
-    const addressId = await this.resolveAddress(dto, userId)
+    const { addressId, snapshot: shipping } = await this.resolveAddress(dto, userId)
 
     // Validate variants and compute totals
     let subtotal = 0
@@ -267,6 +344,11 @@ export class OrdersService {
           guestEmail: dto.guestEmail,
           guestPhone: dto.guestPhone,
           addressId,
+          // Frozen at checkout. `addressId` still records which saved address
+          // was chosen, but the order renders from these columns — otherwise
+          // a customer editing that address later rewrites the delivery
+          // address on an order that has already shipped.
+          ...shipping,
           paymentMethod: dto.paymentMethod,
           shippingMethod: dto.shippingMethod ?? 'standard',
           subtotal,
@@ -338,16 +420,13 @@ export class OrdersService {
             },
           }
         : {}),
-      ...(filters.city || filters.province
-        ? {
-            address: {
-              is: {
-                ...(filters.city ? { city: { contains: filters.city } } : {}),
-                ...(filters.province ? { province: { contains: filters.province } } : {}),
-              },
-            },
-          }
-        : {}),
+      // Filtered on the order's own snapshot columns, not through the address
+      // relation. Staff searching "Lahore" want the orders that were *sent* to
+      // Lahore; going through the relation returned orders whose customer
+      // lives there now, which is a different and less useful set once anyone
+      // has moved.
+      ...(filters.city ? { shippingCity: { contains: filters.city } } : {}),
+      ...(filters.province ? { shippingProvince: { contains: filters.province } } : {}),
       ...(filters.search
         ? {
             OR: [
@@ -355,6 +434,8 @@ export class OrdersService {
               { trackingNumber: { contains: filters.search } },
               { guestPhone: { contains: filters.search } },
               { guestEmail: { contains: filters.search } },
+              { shippingFullName: { contains: filters.search } },
+              { shippingPhone: { contains: filters.search } },
               { user: { name: { contains: filters.search } } },
               { user: { phone: { contains: filters.search } } },
               { user: { email: { contains: filters.search } } },
@@ -412,6 +493,10 @@ export class OrdersService {
     const header = [
       'Order Number', 'Placed', 'Customer', 'Phone', 'Email', 'Status',
       'Payment Status', 'Payment Method', 'Shipping Method', 'Items',
+      // The address the parcel was actually sent to, read from the order's own
+      // snapshot. The export is filterable by city, so an export that omitted
+      // it left staff unable to check what they had just filtered on.
+      'Recipient', 'City', 'Province',
       'Subtotal', 'Shipping', 'Discount', 'Tax', 'Total', 'Tracking',
     ]
     const rows = orders.map((o) => [
@@ -425,6 +510,9 @@ export class OrdersService {
       o.paymentMethod,
       o.shippingMethod,
       String(o.items.length),
+      o.shippingFullName ?? '',
+      o.shippingCity ?? '',
+      o.shippingProvince ?? '',
       rupeeCell(o.subtotal),
       rupeeCell(o.shippingCost),
       rupeeCell(o.discount),
@@ -492,27 +580,76 @@ export class OrdersService {
    * A guest instead supplies the address inline and we persist it, which is
    * what makes guest checkout possible at all.
    */
-  private async resolveAddress(dto: CreateOrderDto, userId?: string): Promise<string> {
+  private async resolveAddress(
+    dto: CreateOrderDto,
+    userId?: string,
+  ): Promise<ResolvedOrderAddress> {
     if (dto.addressId) {
+      // A guest has no address book, so there is no id they could legitimately
+      // name. Without this the scope collapsed to `{ id }` and any guest could
+      // reference a stranger's saved address — which now matters more than it
+      // did, because the row is copied wholesale onto an order they control:
+      // recipient name, phone, email and street address, frozen where they put
+      // them. Rejected before the lookup so nothing is read at all.
+      if (!userId) throw new BadRequestException('Address not found.')
+
       const existing = await this.prisma.address.findFirst({
-        where: { id: dto.addressId, ...(userId ? { userId } : {}) },
-        select: { id: true },
+        // Scoped to the caller, so a guessed id from another account reads as
+        // "not found" rather than confirming the address exists — and, more
+        // to the point, cannot be shipped to.
+        where: { id: dto.addressId, userId },
+        select: ADDRESS_SNAPSHOT_SELECT,
       })
       if (!existing) throw new BadRequestException('Address not found.')
-      return existing.id
+      return { addressId: existing.id, snapshot: toShippingSnapshot(existing) }
     }
 
     if (!dto.address) {
       throw new BadRequestException('A delivery address is required.')
     }
 
+    // `saveAddress` is what makes "add a new address during checkout" work
+    // without navigating away. For a guest it is moot: the row is written
+    // either way, with `userId = NULL`, because Order.addressId needs
+    // something to point at.
+    // Only an owned address can be a default — an order-scoped row is not in
+    // the address book to be defaulted to.
+    //
+    // Written as a single narrowing `if` rather than a precomputed boolean:
+    // `Boolean(userId && ...)` assigned to a const does NOT narrow `userId`,
+    // so inside the block it stayed `string | undefined`. Prisma treats
+    // `where: { userId: undefined }` as `where: {}` — a guest slipping through
+    // would have cleared `isDefaultShipping` on every address row.
+    let shouldSetDefault = false
+    if (userId && dto.saveAddress && dto.setDefaultAddress) {
+      shouldSetDefault = true
+      // Shipping only. Checkout is collecting a delivery address, so claiming
+      // the billing default here would change a setting the customer was never
+      // shown — and there is no billing address to attach it to anyway while
+      // cash on delivery is the only payment method.
+      await this.prisma.address.updateMany({
+        where: { userId },
+        data: { isDefaultShipping: false },
+      })
+    }
+
     const created = await this.prisma.address.create({
-      // A guest address has no owner; it exists only to be referenced by the
-      // order it was created for.
-      data: { ...dto.address, userId, isDefault: false },
-      select: { id: true },
+      data: {
+        ...dto.address,
+        // Owned by the account only when the customer asked to keep it.
+        //
+        // Every signed-in checkout used to write an owned address row, so a
+        // customer who typed a one-off delivery address — a gift to a
+        // relative, a hotel in Makkah — found it filed in their address book
+        // alongside near-duplicates of their own. Unowned rows behave exactly
+        // like guest addresses: they exist to be referenced by their order and
+        // are invisible to /users/me/addresses.
+        userId: dto.saveAddress ? userId : null,
+        isDefaultShipping: shouldSetDefault,
+      },
+      select: ADDRESS_SNAPSHOT_SELECT,
     })
-    return created.id
+    return { addressId: created.id, snapshot: toShippingSnapshot(created) }
   }
 
   /**

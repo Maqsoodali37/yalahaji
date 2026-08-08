@@ -62,7 +62,12 @@
     "signOut": "تسجيل الخروج",
     "trackOrder": "تتبع الطلب",
     "register": "إنشاء حساب",
-    "myAccount": "حسابي"
+    "myAccount": "حسابي",
+    "primaryNav": "التنقل الرئيسي",
+    "sectionNav": "تنقل القسم",
+    "expand": "توسيع",
+    "collapse": "طي",
+    "opensInNewTab": "(يفتح في علامة تبويب جديدة)"
   },
   "hero": {
     "seasonalBadge": "موسم الحج 2025",

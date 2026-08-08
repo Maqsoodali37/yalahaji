@@ -62,7 +62,12 @@
     "signOut": "لاگ آؤٹ",
     "trackOrder": "آرڈر کا سراغ",
     "register": "اکاؤنٹ بنائیں",
-    "myAccount": "میرا اکاؤنٹ"
+    "myAccount": "میرا اکاؤنٹ",
+    "primaryNav": "مرکزی نیویگیشن",
+    "sectionNav": "سیکشن نیویگیشن",
+    "expand": "کھولیں",
+    "collapse": "بند کریں",
+    "opensInNewTab": "(نئے ٹیب میں کھلتا ہے)"
   },
   "hero": {
     "seasonalBadge": "حج سیزن 2025",

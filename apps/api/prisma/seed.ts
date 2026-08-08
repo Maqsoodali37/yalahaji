@@ -1,6 +1,7 @@
-import { PrismaClient, Tier } from '@prisma/client'
+import { PrismaClient, Prisma, Tier } from '@prisma/client'
 import * as bcrypt from 'bcryptjs'
 import { CONFIG_CATALOGUE } from '../src/settings/config-catalogue'
+import { DEFAULT_MENUS, type DefaultMenuItem } from '../src/menus/default-menus'
 
 const prisma = new PrismaClient()
 
@@ -361,6 +362,56 @@ async function main() {
     })
   }
   console.log('✅ Kit builder steps:', kitSteps.length)
+
+
+  // ── Navigation menus ──────────────────────────────────────────────────────
+  //
+  // Insert-only, exactly like the config catalogue above: a location that
+  // already has a menu is left completely alone, so re-running the seed after
+  // staff have edited the header does not throw their work away. The list in
+  // `default-menus.ts` is what the storefront used to carry in code.
+  let menusAdded = 0
+
+  async function insertItems(
+    menuId: string,
+    items: DefaultMenuItem[],
+    parentId: string | null,
+  ): Promise<void> {
+    for (const [index, item] of items.entries()) {
+      const { children, megaConfig, ...fields } = item
+      const created = await prisma.menuItem.create({
+        data: {
+          ...fields,
+          menuId,
+          parentId,
+          order: index,
+          // `Record<string, unknown>` is comparable to Prisma's
+          // `InputJsonValue` but not assignable to it, so this needs the same
+          // cast `MenusService.toItemData` uses. Without it `npm run
+          // prisma:seed` fails to type-check — `tsc --noEmit` would not catch
+          // it, because tsconfig excludes `prisma/`.
+          ...(megaConfig ? { megaConfig: megaConfig as Prisma.InputJsonValue } : {}),
+        },
+      })
+      // Sequential, not Promise.all: a child row needs its parent's generated
+      // id, and the order within a sibling group is the array's order.
+      if (children?.length) await insertItems(menuId, children, created.id)
+    }
+  }
+
+  for (const def of DEFAULT_MENUS) {
+    const existing = await prisma.menu.findUnique({ where: { location: def.location } })
+    if (existing) continue
+
+    const menu = await prisma.menu.create({
+      data: { location: def.location, name: def.name },
+    })
+    await insertItems(menu.id, def.items, null)
+    menusAdded++
+  }
+  console.log(
+    `✅ Navigation menus: ${menusAdded} added, ${DEFAULT_MENUS.length - menusAdded} already present`,
+  )
 
   console.log('🎉 Seed complete!')
 }

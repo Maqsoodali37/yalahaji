@@ -34,13 +34,43 @@ export class UsersService {
   }
 
   async getAddresses(userId: string) {
-    return this.prisma.address.findMany({ where: { userId }, orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }] })
+    return this.prisma.address.findMany({
+      where: { userId },
+      orderBy: [{ isDefaultShipping: 'desc' }, { createdAt: 'desc' }],
+    })
+  }
+
+  /**
+   * Clear whichever default flags this write is about to claim.
+   *
+   * Shipping and billing are demoted independently. Clearing both whenever
+   * either is set would mean saving an address as the default *shipping*
+   * address silently stripped the customer's default *billing* address —
+   * a change they never asked for, on a row they were not editing.
+   *
+   * `excludeId` keeps the row being updated out of the sweep, so an update
+   * cannot demote the very flag it is setting depending on statement order.
+   */
+  private async demoteDefaults(
+    userId: string,
+    dto: Partial<CreateAddressDto>,
+    excludeId?: string,
+  ) {
+    const where: Prisma.AddressWhereInput = {
+      userId,
+      ...(excludeId ? { NOT: { id: excludeId } } : {}),
+    }
+
+    if (dto.isDefaultShipping) {
+      await this.prisma.address.updateMany({ where, data: { isDefaultShipping: false } })
+    }
+    if (dto.isDefaultBilling) {
+      await this.prisma.address.updateMany({ where, data: { isDefaultBilling: false } })
+    }
   }
 
   async createAddress(userId: string, dto: CreateAddressDto) {
-    if (dto.isDefault) {
-      await this.prisma.address.updateMany({ where: { userId }, data: { isDefault: false } })
-    }
+    await this.demoteDefaults(userId, dto)
     return this.prisma.address.create({
       data: { ...dto, userId } as Prisma.AddressUncheckedCreateInput,
     })
@@ -49,9 +79,7 @@ export class UsersService {
   async updateAddress(id: string, userId: string, dto: Partial<CreateAddressDto>) {
     const addr = await this.prisma.address.findFirst({ where: { id, userId } })
     if (!addr) throw new NotFoundException('Address not found.')
-    if (dto.isDefault) {
-      await this.prisma.address.updateMany({ where: { userId }, data: { isDefault: false } })
-    }
+    await this.demoteDefaults(userId, dto, id)
     return this.prisma.address.update({ where: { id }, data: dto })
   }
 

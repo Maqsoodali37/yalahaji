@@ -15,6 +15,7 @@ export {
   fromBlogCategory,
 } from './adapters'
 export type { StoreSettings } from './adapters'
+export { adaptMenu, adaptMenuItem } from './adapters'
 
 export {
   fetchProducts,
@@ -83,10 +84,13 @@ export {
   fetchMyOrder,
   cancelOrder,
   trackOrder,
+  ORDERS_PER_PAGE,
 } from './orders'
 export type { PlaceOrderInput, OrderAddressInput, OrderPage, TrackedOrder } from './orders'
 
 export { fetchKitCategories } from './kit'
+
+export { fetchMenu, fetchMenuForCustomer, fallbackMenu, MENU_CACHE_TAG } from './menus'
 
 export {
   fetchReturnableOrders,

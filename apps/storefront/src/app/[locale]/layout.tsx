@@ -11,6 +11,8 @@ import { WhatsAppBubble } from '@/components/layout/whatsapp-bubble'
 import { MobileBottomBar } from '@/components/layout/mobile-bottom-bar'
 import { CompareBar } from '@/components/layout/compare-bar'
 import { CartBootstrap } from '@/components/cart-bootstrap'
+import { MenuProvider } from '@/components/navigation/menu-context'
+import { fetchMenu } from '@/lib/api'
 import { RouteProgress } from '@/components/layout/route-progress'
 import { OrganizationJsonLd } from '@/components/seo/json-ld'
 import { GoogleAnalytics, GoogleAnalyticsConsent } from '@/components/analytics/google-analytics'
@@ -135,6 +137,23 @@ export default async function LocaleLayout({ children, params }: Props) {
   const messages = await getMessages()
   const dir = locale === 'ar' || locale === 'ur' ? 'rtl' : 'ltr'
 
+  // Every menu, fetched once here and shared through MenuProvider.
+  //
+  // Four components render navigation, and each calling `fetchMenu` for
+  // itself would be four round trips for a payload that cannot differ between
+  // them — the same reasoning that made CartBootstrap load shop settings once.
+  // In parallel, because a footer menu has no reason to wait on a header one.
+  //
+  // These reads are anonymous and cached (tag: `menus`), so they are the
+  // guest view — which is also the correct thing for a crawler to receive.
+  // MenuProvider re-fetches with the customer's token once auth hydrates.
+  const [header, mobile, footerMenu, sidebar] = await Promise.all([
+    fetchMenu('header', asLocale(locale)),
+    fetchMenu('mobile', asLocale(locale)),
+    fetchMenu('footer', asLocale(locale)),
+    fetchMenu('sidebar', asLocale(locale)),
+  ])
+
   return (
     <html lang={locale} dir={dir} suppressHydrationWarning>
       <head>
@@ -162,6 +181,7 @@ export default async function LocaleLayout({ children, params }: Props) {
         <OrganizationJsonLd locale={locale} />
         <NextIntlClientProvider messages={messages}>
           <Providers>
+            <MenuProvider menus={{ header, mobile, footer: footerMenu, sidebar }}>
             {/* Reconciles the persisted cart against the server and loads
                 shipping settings once the app is interactive. */}
             <CartBootstrap />
@@ -176,6 +196,7 @@ export default async function LocaleLayout({ children, params }: Props) {
             <WhatsAppBubble />
             <MobileBottomBar />
             <ConsentBanner />
+            </MenuProvider>
           </Providers>
         </NextIntlClientProvider>
       </body>

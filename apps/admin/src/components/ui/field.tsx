@@ -82,13 +82,48 @@ export function FormField({
   className,
   children,
 }: FormFieldProps) {
+  const generated = React.useId()
+
+  // Associate the label with its control automatically when the caller has
+  // not done it by hand.
+  //
+  // A `<label>` with no `htmlFor` is attached to nothing: clicking it does
+  // nothing, and a screen reader announces the input as unlabelled. Most call
+  // sites in this app omit it, so relying on every author to remember has not
+  // worked — doing it here fixes the ones already written and the ones nobody
+  // has written yet.
+  //
+  // Only a lone element child that carries no `id` of its own is touched. A
+  // caller that set either an `htmlFor` or an `id` has said what it wants, and
+  // multiple children or a fragment have no single control to point at.
+  //
+  // A child that wraps its control in a <div> would still get the id on the
+  // wrapper, where `for` is inert. No call site does that today; pass
+  // `htmlFor` explicitly if one ever needs to.
+  let control = children
+  let targetId = htmlFor
+
+  // The Fragment check is not pedantry: `isValidElement` returns true for a
+  // fragment, React silently discards an `id` placed on one, and the label
+  // would then point at an element that does not exist — worse than no
+  // association, because the markup looks correct.
+  if (!targetId && React.isValidElement(children) && children.type !== React.Fragment) {
+    const existingId = (children.props as { id?: string }).id
+    targetId = existingId ?? generated
+    if (!existingId) {
+      control = React.cloneElement(children as React.ReactElement<{ id?: string }>, {
+        id: targetId,
+      })
+    }
+  }
+
   return (
     <div className={className}>
-      <label htmlFor={htmlFor} className="label">
+      <label htmlFor={targetId} className="label">
         {label}
         {required && <span className="text-alert ml-0.5">*</span>}
       </label>
-      {children}
+      {control}
       {error ? <p className="error-text">{error}</p> : hint ? <p className="hint">{hint}</p> : null}
     </div>
   )

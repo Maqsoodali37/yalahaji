@@ -7,6 +7,7 @@ import { SlidersHorizontal, Grid3X3, List, ChevronRight, X } from 'lucide-react'
 import type { Product, Category } from '@/types'
 import { ProductCard } from './product-card'
 import { FilterSidebar } from './filter-sidebar'
+import { SidebarNav } from '@/components/navigation/sidebar-nav'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -169,6 +170,13 @@ export function ShopPage({ products, categories, activeCategory }: Props) {
         <div className="flex gap-6">
           {/* Sidebar — desktop */}
           <aside className="hidden lg:block w-64 flex-shrink-0">
+            {/*
+              The optional `sidebar` menu, above the filters. Renders nothing
+              at all when no sidebar menu is configured — the feature is off
+              by being absent, so a shop that has not set one up pays nothing
+              and sees no empty container.
+            */}
+            <SidebarNav className="mb-6 pb-6 border-b border-line" />
             <FilterSidebar
               categories={categories}
               activeCategory={activeCategory}

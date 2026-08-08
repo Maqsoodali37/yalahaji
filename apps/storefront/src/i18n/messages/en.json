@@ -62,7 +62,12 @@
     "signOut": "Sign Out",
     "trackOrder": "Track Order",
     "register": "Create Account",
-    "myAccount": "My Account"
+    "myAccount": "My Account",
+    "primaryNav": "Main navigation",
+    "sectionNav": "Section navigation",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "opensInNewTab": "(opens in a new tab)"
   },
   "hero": {
     "seasonalBadge": "Hajj Season 2025",

@@ -108,6 +108,8 @@ export interface CartItem {
   name: string
   image: string
   tier: Tier
+  /** Only populated on order lines — the live cart does not carry it. */
+  sku?: string
   size?: string
   color?: string
   colorHex?: string
@@ -151,6 +153,14 @@ export type PaymentMethod =
 
 export type ShippingMethod = 'standard' | 'express' | 'cod'
 
+/**
+ * Mirrors the Prisma `PaymentStatus` enum. Distinct from `OrderStatus`: a COD
+ * order is `delivered` and `unpaid` for the moment between handing the parcel
+ * over and the courier remitting the cash, and the two were previously
+ * conflated on screen.
+ */
+export type PaymentStatus = 'unpaid' | 'paid' | 'partially_refunded' | 'refunded'
+
 export interface OrderTimeline {
   status: OrderStatus
   label: string
@@ -158,17 +168,49 @@ export interface OrderTimeline {
   completed: boolean
 }
 
+/**
+ * The chips the address book offers.
+ *
+ * `Address.label` stays a plain `string`, deliberately: rows predating this
+ * hold whatever was typed ("Warehouse", "Ammi's house"), and narrowing the
+ * field to this union would make those rows fail to typecheck on read. The
+ * chips are a shortcut for the common answers, not a schema.
+ *
+ * "Other" is a mode rather than a value — picking it clears the label and
+ * shows a text field, so it is never what gets stored.
+ */
+export const ADDRESS_LABELS = [
+  { type: 'home', label: 'Home' },
+  { type: 'office', label: 'Office' },
+  { type: 'other', label: 'Other' },
+] as const
+
+export type AddressLabelType = (typeof ADDRESS_LABELS)[number]['type']
+
+/** Shipping only for now — nothing collects a billing address while COD is
+ *  the only enabled payment method. See PROJECT_SPEC.md. */
+export type AddressDefaultKind = 'shipping' | 'billing'
+
 export interface Address {
   id: string
+  /** Free-text display name. Meaningful mainly when `labelType` is `other`. */
   label: string
+  labelType: AddressLabelType
   fullName: string
   phone: string
+  /** Optional, per-address: the recipient is not always the account holder. */
+  email?: string
   addressLine1: string
   addressLine2?: string
+  /** Named locality — "DHA Phase 5", "Gulberg III". */
+  area?: string
   city: string
   province: string
+  country: string
   postalCode?: string
-  isDefault: boolean
+  isDefaultShipping: boolean
+  /** Stored and editable, but read by nothing yet — COD has no billing step. */
+  isDefaultBilling: boolean
 }
 
 export interface Order {
@@ -179,6 +221,7 @@ export interface Order {
   timeline: OrderTimeline[]
   shippingAddress: Address
   paymentMethod: PaymentMethod
+  paymentStatus: PaymentStatus
   shippingMethod: ShippingMethod
   subtotal: number
   shippingCost: number
@@ -255,4 +298,87 @@ export interface Testimonial {
   rating: number
   type: 'text' | 'audio' | 'video'
   mediaUrl?: string
+}
+
+// ─── Navigation menus ─────────────────────────────────────────────────────────
+
+export type MenuLocation = 'header' | 'footer' | 'mobile' | 'sidebar' | 'mega'
+
+export type MenuLinkType =
+  | 'category'
+  | 'product'
+  | 'cms_page'
+  | 'brand'
+  | 'collection'
+  | 'custom'
+  | 'external'
+  | 'heading'
+
+export type MenuVisibility = 'everyone' | 'guest' | 'customer' | 'wholesale' | 'retail'
+
+export type MenuDevice = 'all' | 'desktop' | 'mobile'
+
+export type MegaMenuLayout =
+  | 'columns'
+  | 'columns_with_banner'
+  | 'featured_grid'
+  | 'columns_with_products'
+
+export interface MegaBanner {
+  image: string
+  href: string | null
+  heading: Record<Locale, string> | null
+  subheading: Record<Locale, string> | null
+}
+
+export interface MegaBlock {
+  type: 'text' | 'image' | 'links'
+  heading: Record<Locale, string> | null
+  body: Record<Locale, string> | null
+  image: string | null
+  links: Array<{ label: Record<Locale, string>; href: string }>
+}
+
+export interface MegaConfig {
+  featuredCategorySlugs: string[]
+  featuredProductSlugs: string[]
+  banner: MegaBanner | null
+  blocks: MegaBlock[]
+}
+
+export interface MenuItem {
+  id: string
+  title: Record<Locale, string>
+  linkType: MenuLinkType
+  /**
+   * Ready-to-render path, locale prefix included, or `null` for a `heading`.
+   *
+   * Built once in the adapter from `linkType` + slug/url — never in a
+   * component. Six surfaces render menu items, and "which route does a
+   * `collection` go to" is one answer, not six.
+   */
+  href: string | null
+  /** True when `href` points off-site. Decides target/rel and the external-link icon. */
+  isExternal: boolean
+  icon?: string
+  image?: string
+  badge?: Record<Locale, string>
+  device: MenuDevice
+  /** Composed `rel` value, or undefined when there is nothing to emit. */
+  rel?: string
+  openInNewTab: boolean
+  titleAttr?: Record<Locale, string>
+  isMegaMenu: boolean
+  megaLayout?: MegaMenuLayout
+  megaColumns: number
+  megaConfig?: MegaConfig
+  children: MenuItem[]
+}
+
+export interface Menu {
+  id: string
+  location: MenuLocation
+  /** Seconds. Mirrors the TTL the API reports for this menu. */
+  cacheTtl: number
+  items: MenuItem[]
 }

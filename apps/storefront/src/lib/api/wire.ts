@@ -11,7 +11,14 @@
 //
 // `adapters.ts` is the only place allowed to convert between the two.
 
-import type { Tier, OrderStatus, PaymentMethod, ShippingMethod } from '@/types'
+import type {
+  Tier,
+  AddressLabelType,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+  ShippingMethod,
+} from '@/types'
 
 export interface Paginated<T> {
   items: T[]
@@ -164,14 +171,24 @@ export interface WireBlogPost {
 export interface WireAddress {
   id: string
   label: string | null
+  // The four fields below are optional because an API instance predating the
+  // address migration omits them entirely, and the storefront and API deploy
+  // separately. `adapters.ts` supplies the fallbacks; declaring them required
+  // here would make those `??` branches look like dead code and invite their
+  // removal, which is when a rolling deploy starts rendering blank countries.
+  labelType?: AddressLabelType
   fullName: string
   phone: string
+  email: string | null
   addressLine1: string
   addressLine2: string | null
+  area: string | null
   city: string
   province: string
+  country?: string
   postalCode: string | null
-  isDefault: boolean
+  isDefaultShipping?: boolean
+  isDefaultBilling?: boolean
 }
 
 export interface WireOrderItem {
@@ -181,6 +198,8 @@ export interface WireOrderItem {
   name: string
   image: string | null
   tier: Tier
+  /** Present via the `variant` relation; the order row itself has no SKU. */
+  variant?: { sku: string }
   size: string | null
   color: string | null
   scent: string | null
@@ -204,6 +223,7 @@ export interface WireOrder {
   number: string
   status: OrderStatus
   paymentMethod: PaymentMethod
+  paymentStatus: PaymentStatus
   shippingMethod: ShippingMethod
   /** paisas */
   subtotal: number
@@ -217,6 +237,29 @@ export interface WireOrder {
   updatedAt: string
   items: WireOrderItem[]
   timeline: WireOrderTimeline[]
+
+  /**
+   * The delivery address as it stood when the order was placed.
+   *
+   * This — not `address` — is what the storefront renders. `address` points at
+   * a row the customer can still edit or delete, so reading it made a saved
+   * address change rewrite the delivery address on orders that had already
+   * shipped. Nullable only because the columns were added to a populated
+   * table; the migration backfills every existing row.
+   */
+  shippingLabel: string | null
+  shippingFullName: string | null
+  shippingPhone: string | null
+  shippingEmail: string | null
+  shippingAddressLine1: string | null
+  shippingAddressLine2: string | null
+  shippingArea: string | null
+  shippingCountry: string | null
+  shippingCity: string | null
+  shippingProvince: string | null
+  shippingPostalCode: string | null
+
+  /** Kept for provenance — which saved address was chosen. Not for display. */
   address: WireAddress | null
 }
 
@@ -279,3 +322,71 @@ export interface WireCouponValidation {
  */
 export type WirePublicSettings = Record<string, string | number | boolean | null>
 
+
+// ─── Menus ────────────────────────────────────────────────────────────────────
+//
+// A fifth mismatch the adapters absorb, on top of the four listed at the top
+// of this file: the API returns *what a menu item points at* (`linkType` plus
+// a slug or a URL), and components need *a href*. Route shapes and the locale
+// prefix are storefront facts the API has no business knowing, so building
+// one is `adaptMenuItem`'s job and nowhere else's.
+
+export interface WireMenuText {
+  en: string
+  ur: string | null
+  ar: string | null
+}
+
+export interface WireMegaBanner {
+  image: string
+  href: string | null
+  heading: WireMenuText | null
+  subheading: WireMenuText | null
+}
+
+export interface WireMegaBlock {
+  type: 'text' | 'image' | 'links'
+  heading: WireMenuText | null
+  body: WireMenuText | null
+  image: string | null
+  links: Array<{ label: WireMenuText; href: string }>
+}
+
+export interface WireMegaConfig {
+  featuredCategorySlugs: string[]
+  featuredProductSlugs: string[]
+  banner: WireMegaBanner | null
+  blocks: WireMegaBlock[]
+}
+
+export interface WireMenuItem {
+  id: string
+  title: WireMenuText
+  linkType: string
+  targetSlug: string | null
+  url: string | null
+  icon: string | null
+  image: string | null
+  badge: WireMenuText | null
+  order: number
+  device: string
+  visibility: string
+  isMegaMenu: boolean
+  megaLayout: string | null
+  megaColumns: number
+  megaConfig: WireMegaConfig | null
+  relAttribute: string | null
+  noFollow: boolean
+  openInNewTab: boolean
+  titleAttr: WireMenuText | null
+  children: WireMenuItem[]
+}
+
+export interface WireMenu {
+  id: string
+  location: string
+  name: string
+  cacheTtl: number
+  updatedAt: string
+  items: WireMenuItem[]
+}

@@ -1,6 +1,7 @@
 'use client'
 
 import { use, useState } from 'react'
+import { DEFAULT_COUNTRY } from '@/lib/address'
 import Link from 'next/link'
 import { ArrowLeft, MapPin, User, Printer, Truck, CreditCard } from 'lucide-react'
 import { useOrder, useSetTracking, useSetPaymentStatus } from '@/hooks/use-orders'
@@ -48,10 +49,38 @@ export default function OrderDetailPage({
     )
   }
 
-  // The API returns the raw Prisma Address: fullName / addressLine1 / addressLine2.
-  const customerName = order.user?.name ?? order.address?.fullName ?? 'Guest'
-  const customerPhone = order.user?.phone ?? order.guestPhone ?? order.address?.phone
-  const customerEmail = order.user?.email ?? order.guestEmail
+  /**
+   * The address this order actually shipped to.
+   *
+   * Read from the order's own frozen `shipping*` columns, never through
+   * `order.address` — that relation points at a row the customer can still
+   * edit or delete, so rendering it showed staff where the customer lives
+   * *now* rather than where the parcel went. For a delivery dispute those are
+   * exactly the two things that must not be confused.
+   *
+   * The `order.address` fallback covers only orders served by an API instance
+   * that predates the snapshot columns, i.e. mid-rolling-deploy. It is last so
+   * it can never win over a real snapshot.
+   */
+  const shipTo = order.shippingFullName
+    ? {
+        label: order.shippingLabel,
+        fullName: order.shippingFullName,
+        phone: order.shippingPhone,
+        email: order.shippingEmail,
+        addressLine1: order.shippingAddressLine1,
+        addressLine2: order.shippingAddressLine2,
+        area: order.shippingArea,
+        city: order.shippingCity,
+        province: order.shippingProvince,
+        country: order.shippingCountry,
+        postalCode: order.shippingPostalCode,
+      }
+    : order.address ?? null
+
+  const customerName = order.user?.name ?? shipTo?.fullName ?? 'Guest'
+  const customerPhone = order.user?.phone ?? order.guestPhone ?? shipTo?.phone
+  const customerEmail = order.user?.email ?? order.guestEmail ?? shipTo?.email
 
   return (
     <>
@@ -218,22 +247,36 @@ export default function OrderDetailPage({
                 </div>
               </div>
 
-              {order.address && (
+              {shipTo && (
                 <div className="flex gap-2.5 pt-3 border-t border-line">
                   <MapPin className="h-4 w-4 text-ink-3 shrink-0 mt-0.5" aria-hidden />
                   <address className="not-italic text-ink-2 leading-relaxed">
-                    {order.address.fullName && (
+                    {shipTo.fullName && (
                       <>
-                        <span className="text-ink font-medium">{order.address.fullName}</span>
+                        <span className="text-ink font-medium">{shipTo.fullName}</span>
+                        {shipTo.label && (
+                          <span className="text-ink-3"> · {shipTo.label}</span>
+                        )}
                         <br />
                       </>
                     )}
-                    {order.address.addressLine1}
-                    {order.address.addressLine2 && <>, {order.address.addressLine2}</>}
+                    {shipTo.addressLine1}
+                    {shipTo.addressLine2 && <>, {shipTo.addressLine2}</>}
                     <br />
-                    {order.address.city}
-                    {order.address.province && <>, {order.address.province}</>}
-                    {order.address.postalCode && <> {order.address.postalCode}</>}
+                    {shipTo.area && <>{shipTo.area}, </>}
+                    {shipTo.city}
+                    {shipTo.province && <>, {shipTo.province}</>}
+                    {shipTo.postalCode && <> {shipTo.postalCode}</>}
+                    {/* Only when it is not the one every order has — a line
+                        reading "Pakistan" under every Pakistani address is
+                        noise until the shop ships abroad, at which point it
+                        appears exactly where it matters. */}
+                    {shipTo.country && shipTo.country !== DEFAULT_COUNTRY && (
+                      <>
+                        <br />
+                        {shipTo.country}
+                      </>
+                    )}
                   </address>
                 </div>
               )}

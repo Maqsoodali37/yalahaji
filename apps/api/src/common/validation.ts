@@ -41,6 +41,25 @@ export const MAX_NAME = 120
 export const MAX_CITY = 80
 export const MAX_ADDRESS_LINE = 200
 export const MAX_LABEL = 40
+/** A named locality within a city — "DHA Phase 5", "Gulberg III". */
+export const MAX_AREA = 120
+export const MAX_EMAIL = 160
+export const MAX_COUNTRY = 80
+
+/**
+ * Countries the shop will actually ship to.
+ *
+ * Enforced server-side for the same reason `ENABLED_PAYMENT_METHODS` is:
+ * offering one option in the storefront picker does not stop a hand-rolled
+ * request from saving an address the shop cannot deliver to, and the first
+ * anyone would learn of it is a courier refusing the parcel.
+ *
+ * Typed as a mutable `string[]` rather than `as const` to match
+ * `ENABLED_PAYMENT_METHODS`, the existing `@IsIn` precedent in this codebase.
+ * class-validator only widened `IsIn` to accept a `readonly` array in 0.14, and
+ * nothing here needs the literal union.
+ */
+export const SUPPORTED_COUNTRIES: string[] = ['Pakistan']
 export const MAX_REVIEW_TITLE = 120
 export const MAX_REVIEW_BODY = 4000
 export const MAX_GIFT_MESSAGE = 500

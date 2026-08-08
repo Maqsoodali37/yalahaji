@@ -93,7 +93,27 @@ export async function fetchAddresses(): Promise<Address[]> {
   return wire.map(adaptAddress)
 }
 
-export type AddressInput = Omit<Address, 'id'>
+/**
+ * `email`/`addressLine2`/`area`/`postalCode` are widened to accept `null`
+ * on top of `Address`'s `string | undefined`.
+ *
+ * `updateAddress` PATCHes, and the API distinguishes an omitted key ("leave
+ * alone") from an explicit `null` ("clear it") — the same rule already
+ * documented for `MenuItemInput`. `AddressForm` sends `null` for a field the
+ * customer emptied; sending `undefined` instead would have been dropped by
+ * `JSON.stringify` before the request ever left the browser, so the field
+ * would never actually clear — the API would just leave the old value alone
+ * and the customer would see it reappear on the next fetch.
+ */
+export type AddressInput = Omit<
+  Address,
+  'id' | 'email' | 'addressLine2' | 'area' | 'postalCode'
+> & {
+  email?: string | null
+  addressLine2?: string | null
+  area?: string | null
+  postalCode?: string | null
+}
 
 export async function createAddress(input: AddressInput): Promise<Address> {
   const wire = await apiFetch<WireAddress>('/users/me/addresses', {

@@ -273,10 +273,13 @@ export interface OrderAddress {
   label?: string
   fullName: string
   phone: string
+  email?: string | null
   addressLine1: string
   addressLine2?: string | null
+  area?: string | null
   city: string
   province?: string | null
+  country?: string | null
   postalCode?: string | null
 }
 
@@ -300,6 +303,31 @@ export interface Order {
   createdAt: string
   updatedAt: string
   user?: { id: string; name: string; phone: string; email: string | null } | null
+
+  /**
+   * The delivery address as it stood when the order was placed.
+   *
+   * This — not `address` — is what the order screen must render. `address`
+   * points at a row the customer can still edit or delete, so reading it meant
+   * a customer moving house rewrote the recorded destination of every order
+   * they had ever placed, including delivered ones a dispute might turn on.
+   *
+   * Nullable only because the columns were added to a populated table; the
+   * `20260807100000_order_address_snapshot` migration backfills every row.
+   */
+  shippingLabel?: string | null
+  shippingFullName?: string | null
+  shippingPhone?: string | null
+  shippingEmail?: string | null
+  shippingAddressLine1?: string | null
+  shippingAddressLine2?: string | null
+  shippingArea?: string | null
+  shippingCountry?: string | null
+  shippingCity?: string | null
+  shippingProvince?: string | null
+  shippingPostalCode?: string | null
+
+  /** Which saved address was chosen. Provenance only — never for display. */
   address?: OrderAddress | null
   coupon?: { code: string; type: string; value: number } | null
   items: OrderItem[]
@@ -402,4 +430,187 @@ export interface AuditLogEntry {
   after: unknown
   ipAddress: string | null
   createdAt: string
+}
+
+// ─── Navigation menus ─────────────────────────────────────────
+//
+// Mirrors the Prisma models in `apps/api/prisma/schema.prisma`. The admin and
+// API shapes are intentional mirrors, the same rule the OrderStatus/address
+// field names already follow — a drift here previously shipped a blank
+// shipping block and an unreachable status.
+
+export type MenuLocation = 'header' | 'footer' | 'mobile' | 'sidebar' | 'mega'
+
+export type MenuLinkType =
+  | 'category'
+  | 'product'
+  | 'cms_page'
+  | 'brand'
+  | 'collection'
+  | 'custom'
+  | 'external'
+  | 'heading'
+
+export type MenuVisibility = 'everyone' | 'guest' | 'customer' | 'wholesale' | 'retail'
+
+export type MenuDevice = 'all' | 'desktop' | 'mobile'
+
+export type MegaMenuLayout =
+  | 'columns'
+  | 'columns_with_banner'
+  | 'featured_grid'
+  | 'columns_with_products'
+
+/** Free-form panel content. The API normalises whatever is stored here on read. */
+export interface MegaConfig {
+  featuredCategorySlugs?: string[]
+  featuredProductSlugs?: string[]
+  banner?: {
+    image: string
+    href?: string | null
+    heading?: { en: string; ur?: string | null; ar?: string | null } | null
+    subheading?: { en: string; ur?: string | null; ar?: string | null } | null
+  } | null
+  blocks?: Array<{
+    type: 'text' | 'image' | 'links'
+    heading?: { en: string; ur?: string | null; ar?: string | null } | null
+    body?: { en: string; ur?: string | null; ar?: string | null } | null
+    image?: string | null
+    links?: Array<{ label: { en: string; ur?: string | null; ar?: string | null }; href: string }>
+  }>
+}
+
+export interface Menu {
+  id: string
+  location: MenuLocation
+  name: string
+  isActive: boolean
+  cacheTtl: number
+  createdAt?: string
+  updatedAt?: string
+  /** Only on `GET /menus/admin`. */
+  itemCount?: number
+}
+
+/**
+ * A node of `GET /menus/admin/:id/tree`.
+ *
+ * The admin tree is the *unfiltered* one — every status, every audience, every
+ * schedule — deliberately a different endpoint from the public read rather than
+ * an `includeHidden` flag on it, because the public route carries no guard.
+ */
+export interface MenuItem {
+  id: string
+  title: { en: string; ur: string | null; ar: string | null }
+  linkType: MenuLinkType
+  targetSlug: string | null
+  url: string | null
+  icon: string | null
+  image: string | null
+  badge: { en: string; ur: string | null; ar: string | null } | null
+  order: number
+  device: MenuDevice
+  visibility: MenuVisibility
+  isMegaMenu: boolean
+  megaLayout: MegaMenuLayout | null
+  megaColumns: number
+  megaConfig: MegaConfig | null
+  relAttribute: string | null
+  noFollow: boolean
+  openInNewTab: boolean
+  titleAttr: { en: string; ur: string | null; ar: string | null } | null
+  children: MenuItem[]
+
+  // ── Admin-only fields ──────────────────────────────────────
+  //
+  // `GET /menus/admin/:id/tree` returns these; the public reads deliberately
+  // do not — they are the fields the public read exists to *apply and then
+  // discard*, so publishing them would leak the existence and timing of
+  // navigation staff have not released yet.
+  //
+  // Declared required rather than optional so reading one is type-checked. The
+  // earlier optional-plus-inline-cast version compiled either way, which meant
+  // a typo in a cast would have read `undefined` in silence.
+  parentId: string | null
+  isActive: boolean
+  targetId: string | null
+  /** ISO strings — the column is a DateTime and JSON has no date type. */
+  publishFrom: string | null
+  publishUntil: string | null
+}
+
+/**
+ * Payload for `POST /menus/admin/items` and `PATCH /menus/admin/items/:id`.
+ *
+ * **Every optional field is `| null` on purpose.** In a PATCH, omitting a key
+ * means "leave this alone" and sending `null` means "clear it" — two different
+ * instructions the API deliberately distinguishes. Typing these as `string`
+ * only would let a form map a cleared input to `undefined`, which reads as
+ * "leave alone": the admin clears the badge, saves, and the badge is still
+ * there. `@IsOptional()` skips every other validator for `null`, so a null is
+ * always accepted.
+ */
+export interface MenuItemInput {
+  menuId?: string
+  parentId?: string | null
+  titleEn: string
+  titleUr?: string | null
+  titleAr?: string | null
+  linkType: MenuLinkType
+  targetSlug?: string | null
+  targetId?: string | null
+  url?: string | null
+  icon?: string | null
+  image?: string | null
+  badgeEn?: string | null
+  badgeUr?: string | null
+  badgeAr?: string | null
+  order?: number
+  isActive?: boolean
+  visibility?: MenuVisibility
+  device?: MenuDevice
+  publishFrom?: string | null
+  publishUntil?: string | null
+  isMegaMenu?: boolean
+  megaLayout?: MegaMenuLayout | null
+  megaColumns?: number
+  megaConfig?: MegaConfig | null
+  relAttribute?: string | null
+  noFollow?: boolean
+  openInNewTab?: boolean
+  titleAttrEn?: string | null
+  titleAttrUr?: string | null
+  titleAttrAr?: string | null
+}
+
+/**
+ * What `POST`/`PATCH /menus/admin/items` actually return — the flat Prisma
+ * row, not the nested tree node.
+ *
+ * A separate type rather than reusing `MenuItem`: the two disagree on almost
+ * every field (`titleEn` vs `title.en`, no `children`), and typing the
+ * mutation as `MenuItem` was a trap waiting for the first caller that read the
+ * result.
+ */
+export interface MenuItemRow {
+  id: string
+  menuId: string
+  parentId: string | null
+  titleEn: string
+  linkType: MenuLinkType
+  order: number
+  isActive: boolean
+}
+
+export interface MenuInput {
+  location: MenuLocation
+  name: string
+  isActive?: boolean
+  cacheTtl?: number
+}
+
+export interface ReorderMenuItem {
+  id: string
+  parentId: string | null
+  order: number
 }

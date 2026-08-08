@@ -162,10 +162,13 @@ export const password = (min = 8): Rule<string | undefined> =>
 export interface AddressFormValues {
   fullName?: string
   phone?: string
+  email?: string
   addressLine1?: string
   addressLine2?: string
+  area?: string
   city?: string
   province?: string
+  country?: string
   postalCode?: string
 }
 
@@ -183,9 +186,19 @@ export const addressRules: RuleSet<AddressFormValues> = {
     maxLength(200),
   ],
   addressLine2: [maxLength(200)],
+  // Optional: plenty of Pakistani addresses are a street and a city with no
+  // named locality between them, and a required field there would be filled
+  // with a repeat of the city rather than left honest.
+  area: [maxLength(120)],
   city: [required('Enter a city.'), minLength(2), maxLength(80)],
   province: [required('Select a province.')],
+  // Required because the column is NOT NULL, but every form prefills it, so
+  // this only fires if a caller clears it deliberately.
+  country: [required('Select a country.'), maxLength(80)],
   postalCode: [postalCode()],
+  // `email()` already returns undefined for a blank value, so this is optional
+  // without needing a separate branch.
+  email: [email(), maxLength(160)],
 }
 
 export const PROVINCES = [

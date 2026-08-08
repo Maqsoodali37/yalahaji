@@ -1,7 +1,6 @@
 'use client'
 
-import Link from 'next/link'
-import { useTranslations, useLocale } from 'next-intl'
+import { useTranslations } from 'next-intl'
 import { Phone, Mail, MapPin, MessageCircle, Instagram, Facebook, Youtube } from 'lucide-react'
 import { useCartStore } from '@/store/cart'
 import { SafeImage } from '@/components/ui/safe-image'
@@ -10,10 +9,10 @@ import {
   ENABLED_PAYMENT_OPTIONS,
   COMING_SOON_PAYMENT_OPTIONS,
 } from '@/lib/payment-methods'
+import { FooterNav, FooterBottomLinks } from '@/components/navigation/footer-nav'
 
 export function Footer() {
   const t = useTranslations('footer')
-  const locale = useLocale()
   const year = new Date().getFullYear()
 
   // The cart store already holds shop configuration and loads it once at
@@ -26,7 +25,15 @@ export function Footer() {
     <footer className="bg-paper border-t border-line mt-16 pb-16 md:pb-0">
       {/* Main footer columns */}
       <div className="container-max">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-9 py-14">
+        {/*
+          `auto-fit`, not a fixed `md:grid-cols-5`. The middle columns come
+          from the footer menu now, so their count is whatever an admin
+          configured — a fixed five leaves a hole at four and wraps the
+          contact block at six. The 110px track floor is what keeps five
+          columns on one row at the narrowest `md` width (720px of content
+          after padding, less three 36px gutters); 140px wrapped at four.
+        */}
+        <div className="grid grid-cols-2 md:grid-cols-[minmax(0,1.2fr)_repeat(auto-fit,minmax(110px,1fr))] gap-9 py-14">
           {/* Brand column */}
           <div className="col-span-2 md:col-span-1">
             <div className="mb-3.5">
@@ -57,82 +64,13 @@ export function Footer() {
             </div>
           </div>
 
-          {/* Quick Links */}
-          <div>
-            <h5 className="text-[11px] font-extrabold uppercase tracking-[.11em] text-stone mb-[15px]">
-              {t('quickLinks')}
-            </h5>
-            <ul className="space-y-2.5">
-              {[
-                { label: 'About Us', href: '/about' },
-                // Public tracker, not /account/orders — this link is most
-                // often clicked by exactly the people who have no account.
-                { label: 'Track Order', href: '/track-order' },
-                { label: 'Kit Builder', href: '/kit-builder' },
-                { label: 'Blog', href: '/blog' },
-                { label: 'Sale', href: '/shop?filter=sale' },
-              ].map((item) => (
-                <li key={item.href}>
-                  <Link
-                    href={`/${locale}${item.href}`}
-                    className="text-[13.5px] text-ink-2 hover:text-gold-deep transition-colors"
-                  >
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Categories */}
-          <div>
-            <h5 className="text-[11px] font-extrabold uppercase tracking-[.11em] text-stone mb-[15px]">
-              {t('categories')}
-            </h5>
-            <ul className="space-y-2.5">
-              {[
-                { label: 'Hajj & Umrah Kits', href: '/shop/kits' },
-                { label: 'Ihram', href: '/shop/ihram' },
-                { label: 'Abaya & Hijab', href: '/shop/abaya-hijab' },
-                { label: 'Fragrances', href: '/shop/fragrances' },
-                { label: 'Prayer Accessories', href: '/shop/prayer-accessories' },
-                { label: 'Dates & Zam Zam', href: '/shop/dates-zamzam' },
-              ].map((item) => (
-                <li key={item.href}>
-                  <Link
-                    href={`/${locale}${item.href}`}
-                    className="text-[13.5px] text-ink-2 hover:text-gold-deep transition-colors"
-                  >
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Support */}
-          <div>
-            <h5 className="text-[11px] font-extrabold uppercase tracking-[.11em] text-stone mb-[15px]">
-              {t('support')}
-            </h5>
-            <ul className="space-y-2.5">
-              {[
-                { label: 'About Us', href: '/about' },
-                { label: 'Shipping Policy', href: '/shipping' },
-                { label: 'Return Policy', href: '/returns' },
-                { label: 'Terms & Conditions', href: '/terms' },
-              ].map((item) => (
-                <li key={item.href}>
-                  <Link
-                    href={`/${locale}${item.href}`}
-                    className="text-[13.5px] text-ink-2 hover:text-gold-deep transition-colors"
-                  >
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {/*
+            Quick Links, Categories and Support were three inline arrays here.
+            They had drifted from the catalogue and from each other — "About
+            Us" was in two of them, so the same href rendered twice on every
+            page. All three now come from the `footer` menu.
+          */}
+          <FooterNav />
 
           {/* Contact */}
           <div>
@@ -205,11 +143,7 @@ export function Footer() {
         {/* Bottom bar */}
         <div className="border-t border-line py-5 flex flex-col md:flex-row items-center justify-between gap-4 text-[12.5px] text-stone">
           <p>{t('copyright', { year })}</p>
-          <div className="flex gap-4">
-            <Link href={`/${locale}/terms`} className="hover:text-ink transition-colors">Terms</Link>
-            <Link href={`/${locale}/returns`} className="hover:text-ink transition-colors">Returns</Link>
-            <Link href={`/${locale}/shipping`} className="hover:text-ink transition-colors">Shipping</Link>
-          </div>
+          <FooterBottomLinks />
         </div>
       </div>
     </footer>

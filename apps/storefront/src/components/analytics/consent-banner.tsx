@@ -5,8 +5,9 @@ import Link from 'next/link'
 import { useTranslations, useLocale } from 'next-intl'
 import { Cookie, X } from 'lucide-react'
 import {
+  dismissConsent,
+  hasAnsweredConsent,
   isAnalyticsEnabled,
-  readStoredConsent,
   setConsent,
   type ConsentChoice,
 } from '@/lib/analytics'
@@ -29,18 +30,29 @@ export function ConsentBanner() {
   const locale = useLocale()
   // Starts hidden and is only shown from an effect. Rendering it during SSR
   // would flash the banner for visitors who already decided, since the stored
-  // choice lives in localStorage and is unreadable on the server.
+  // choice is client-side and unreadable during the static render.
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
     if (!isAnalyticsEnabled) return
-    if (readStoredConsent() === null) setVisible(true)
+    if (!hasAnsweredConsent()) setVisible(true)
   }, [])
 
   if (!isAnalyticsEnabled || !visible) return null
 
   const decide = (choice: ConsentChoice) => {
     setConsent(choice)
+    setVisible(false)
+  }
+
+  /*
+    Closing without choosing must not be read as consent — the Consent Mode
+    default stays denied and no analytics cookie is written. It is recorded
+    only so the banner stops reappearing on every page load; the visitor is
+    asked again once that dismissal expires.
+  */
+  const dismiss = () => {
+    dismissConsent()
     setVisible(false)
   }
 
@@ -61,7 +73,14 @@ export function ConsentBanner() {
             </span>
             <div className="min-w-0">
               <p className="font-semibold text-ink text-sm">{t('title')}</p>
-              <p className="text-sm text-muted mt-0.5">
+              {/*
+                text-ink-2, not text-muted. `muted` is a *surface* token
+                (#E8F6EF, the mint used for tinted backgrounds) — as a text
+                colour it renders near-white on the white card and the copy
+                disappears. text-ink-2 is the secondary body colour the rest of
+                the storefront uses, and clears WCAG AA against white.
+              */}
+              <p className="text-sm text-ink-2 mt-0.5">
                 {t('description')}{' '}
                 <Link
                   href={`/${locale}/terms`}
@@ -90,16 +109,11 @@ export function ConsentBanner() {
             </button>
           </div>
 
-          {/*
-            Dismissing without choosing must not be read as consent — it leaves
-            the default (denied) in place and simply hides the banner for this
-            page view, so the visitor is asked again next time.
-          */}
           <button
             type="button"
-            onClick={() => setVisible(false)}
+            onClick={dismiss}
             aria-label={t('dismiss')}
-            className="absolute top-2 end-2 md:static p-1 text-muted hover:text-ink transition-colors"
+            className="absolute top-2 end-2 md:static p-1 text-ink-3 hover:text-ink transition-colors"
           >
             <X className="w-4 h-4" aria-hidden="true" />
           </button>

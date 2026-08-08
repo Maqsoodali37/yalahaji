@@ -58,3 +58,9 @@ Thumbs.db
 .cache/
 .temp/
 *.tgz
+
+# Scratch space — working copies, patches and review snapshots.
+# Files already tracked in here stay tracked; this only stops new ones being
+# swept in by `git add -A`.
+_to_delete/
+_patch_applied/

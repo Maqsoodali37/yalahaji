@@ -1,5 +1,5 @@
 import Script from 'next/script'
-import { GA_MEASUREMENT_ID, isAnalyticsEnabled, CONSENT_STORAGE_KEY } from '@/lib/analytics'
+import { GA_MEASUREMENT_ID, isAnalyticsEnabled, consentReaderSnippet } from '@/lib/analytics'
 import { PageViewTracker } from './page-view-tracker'
 
 /**
@@ -32,18 +32,19 @@ import { PageViewTracker } from './page-view-tracker'
 export function GoogleAnalyticsConsent() {
   if (!isAnalyticsEnabled) return null
 
+  // The reader is generated from lib/consent.ts so this snippet cannot drift
+  // out of step with the record format, TTLs, or policy version the rest of
+  // the app writes. It defines __yhConsent as 'granted' | 'denied'.
   const consentDefault = `
 window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}
 window.gtag = gtag;
-var stored = null;
-try { stored = window.localStorage.getItem(${JSON.stringify(CONSENT_STORAGE_KEY)}); } catch (e) {}
-var granted = stored === 'granted' ? 'granted' : 'denied';
+${consentReaderSnippet()}
 gtag('consent', 'default', {
-  ad_storage: granted,
-  ad_user_data: granted,
-  ad_personalization: granted,
-  analytics_storage: granted,
+  ad_storage: __yhConsent,
+  ad_user_data: __yhConsent,
+  ad_personalization: __yhConsent,
+  analytics_storage: __yhConsent,
   functionality_storage: 'granted',
   security_storage: 'granted',
   wait_for_update: 500
