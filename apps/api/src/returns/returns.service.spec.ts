@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing'
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common'
-import { ReturnsService } from './returns.service'
+import { ReturnsService, canTransitionReturn } from './returns.service'
 import { PrismaService } from '../prisma/prisma.service'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -141,5 +141,99 @@ describe('ReturnsService.create', () => {
     expect(prisma.return.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ images: null }) }),
     )
+  })
+})
+
+/**
+ * The `refunded` transition is the one place `Return.status` reaches beyond
+ * its own row and executes a real payment refund. These pin the two rules
+ * that matter most: never against an order that was not paid, and never
+ * twice for the same order.
+ */
+describe('ReturnsService.updateStatus — the refund transition', () => {
+  let service: ReturnsService
+
+  const tx = {
+    order: { updateMany: jest.fn() },
+    return: { update: jest.fn() },
+  }
+
+  const prisma = {
+    return: { findUnique: jest.fn(), update: jest.fn() },
+    $transaction: jest.fn((work: any) => work(tx)),
+  }
+
+  function returnRow(orderPaymentStatus: string, returnStatus = 'received') {
+    return {
+      id: 'ret-1',
+      status: returnStatus,
+      order: { id: 'order-1', number: 'YH-2026-1001-ABCDEF', paymentStatus: orderPaymentStatus },
+    }
+  }
+
+  beforeEach(async () => {
+    jest.clearAllMocks()
+    prisma.$transaction.mockImplementation((work: any) => work(tx))
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [ReturnsService, { provide: PrismaService, useValue: prisma }],
+    }).compile()
+
+    service = moduleRef.get(ReturnsService)
+  })
+
+  it('rejects legal return-status transitions unrelated to refunds unchanged', () => {
+    // Sanity check that the flow map itself did not move.
+    expect(canTransitionReturn('requested', 'approved')).toBe(true)
+    expect(canTransitionReturn('received', 'refunded')).toBe(true)
+    expect(canTransitionReturn('refunded', 'requested')).toBe(false)
+  })
+
+  it('never issues a refund against an unpaid order', async () => {
+    prisma.return.findUnique.mockResolvedValue(returnRow('unpaid'))
+
+    await expect(service.updateStatus('ret-1', 'refunded')).rejects.toBeInstanceOf(
+      BadRequestException,
+    )
+    expect(tx.order.updateMany).not.toHaveBeenCalled()
+    expect(tx.return.update).not.toHaveBeenCalled()
+  })
+
+  it('issues the refund and moves the order payment status atomically when paid', async () => {
+    prisma.return.findUnique.mockResolvedValue(returnRow('paid'))
+    tx.order.updateMany.mockResolvedValue({ count: 1 })
+    tx.return.update.mockResolvedValue({ id: 'ret-1', status: 'refunded' })
+
+    await service.updateStatus('ret-1', 'refunded')
+
+    expect(tx.order.updateMany).toHaveBeenCalledWith({
+      where: { id: 'order-1', paymentStatus: 'paid' },
+      data: { paymentStatus: 'refunded' },
+    })
+    expect(tx.return.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'ret-1' }, data: expect.objectContaining({ status: 'refunded' }) }),
+    )
+  })
+
+  it('rejects a duplicate refund when another action already refunded the order', async () => {
+    // The read saw `paid`, but the order was refunded by a concurrent action
+    // (or the direct payment-status endpoint) between the read and this call.
+    prisma.return.findUnique.mockResolvedValue(returnRow('paid'))
+    tx.order.updateMany.mockResolvedValue({ count: 0 })
+
+    await expect(service.updateStatus('ret-1', 'refunded')).rejects.toBeInstanceOf(
+      BadRequestException,
+    )
+    expect(tx.return.update).not.toHaveBeenCalled()
+  })
+
+  it('does not touch the order at all for a non-refund transition', async () => {
+    prisma.return.findUnique.mockResolvedValue(returnRow('unpaid', 'requested'))
+    prisma.return.update.mockResolvedValue({ id: 'ret-1', status: 'approved' })
+
+    await service.updateStatus('ret-1', 'approved')
+
+    expect(prisma.$transaction).not.toHaveBeenCalled()
+    expect(prisma.return.update).toHaveBeenCalled()
   })
 })

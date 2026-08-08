@@ -28,13 +28,24 @@ const MANAGE_ROLES: Role[] = ['admin', 'manager']
  * Listed here rather than derived from the API response so a location with no
  * menu is still offered — otherwise the only way to create the first sidebar
  * menu would be a POST by hand, which is the gap this screen exists to close.
+ *
+ * There is deliberately no "Mobile drawer" tab and no "Mega" tab:
+ *
+ * - The mobile drawer renders the **same** Main Menu as the desktop header —
+ *   `device` on each item (below) decides whether it shows on desktop,
+ *   mobile, or both. A separate mobile tab let staff maintain two trees that
+ *   looked identical until the day someone edited only one of them.
+ * - A mega panel comes from a header item's own "Mega menu" toggle (see the
+ *   item dialog), not from a standalone location — nothing has ever rendered
+ *   the `mega` location, so offering it as a tab was a control with no effect
+ *   the moment anything was added under it.
  */
 const LOCATIONS: Array<{ value: MenuLocation; label: string; description: string }> = [
-  { value: 'header', label: 'Header', description: 'The main desktop navigation row.' },
   {
-    value: 'mobile',
-    label: 'Mobile drawer',
-    description: 'The tree inside the mobile menu. Falls back to the header menu when empty.',
+    value: 'header',
+    label: 'Main Menu',
+    description:
+      'The single source for the desktop header, the mobile drawer and every mega panel. Use the Device field on an item to show it on desktop only, mobile only, or both.',
   },
   {
     value: 'footer',
@@ -45,12 +56,6 @@ const LOCATIONS: Array<{ value: MenuLocation; label: string; description: string
     value: 'sidebar',
     label: 'Sidebar',
     description: 'Optional. Renders above the shop filters; nothing shows if no menu exists.',
-  },
-  {
-    value: 'mega',
-    label: 'Mega',
-    description:
-      'Reserved. A mega panel comes from a header item’s own flag, not from this location.',
   },
 ]
 

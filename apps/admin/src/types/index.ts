@@ -352,6 +352,13 @@ export interface Order {
   coupon?: { code: string; type: string; value: number } | null
   items: OrderItem[]
   timeline: OrderTimelineEntry[]
+  /**
+   * The physical-return lifecycle for this order — "Return" as its own status,
+   * distinct from `status` (fulfilment) and `paymentStatus` (money). Usually
+   * zero or one entry; the API refuses a second open request per order, but
+   * a rejected one can be followed by a fresh request, hence an array.
+   */
+  returns: OrderReturn[]
 }
 
 export interface OrderStats {
@@ -374,6 +381,23 @@ export interface ReturnOrderItem {
   quantity: number
   price: number
   image?: string | null
+}
+
+/**
+ * A return row as it comes back nested on an `Order` (`GET /orders/admin/:id`).
+ * Unlike `ReturnRequest` (the admin queue's own shape) this carries no nested
+ * `order` — the order is already the parent context, so the API's plain
+ * `returns: true` include returns just the row's own columns.
+ */
+export interface OrderReturn {
+  id: string
+  orderId: string
+  reason: string
+  status: ReturnStatus
+  note?: string | null
+  images?: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 /** A return request as the admin queue receives it. */

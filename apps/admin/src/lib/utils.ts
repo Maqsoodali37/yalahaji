@@ -151,6 +151,24 @@ export function paymentStatusClasses(status: string) {
 // ─── Filter option lists (mirror the Prisma enums) ────────────
 
 export const PAYMENT_STATUSES = ['unpaid', 'paid', 'partially_refunded', 'refunded'] as const
+
+/**
+ * Payment statuses an order can legally move to from its current one.
+ *
+ * Mirrors `PAYMENT_STATUS_FLOW` in apps/api (orders.service.ts) — change one,
+ * change both. `unpaid → refunded` is deliberately absent: there is nothing to
+ * give back on an order nobody has paid for. `refunded` is terminal — the same
+ * order cannot be refunded a second time.
+ */
+export function nextPaymentStatuses(current: string): (typeof PAYMENT_STATUSES)[number][] {
+  const flow: Record<string, (typeof PAYMENT_STATUSES)[number][]> = {
+    unpaid: ['paid'],
+    paid: ['refunded', 'partially_refunded'],
+    partially_refunded: ['refunded'],
+    refunded: [],
+  }
+  return flow[current] ?? []
+}
 export const PAYMENT_METHODS = ['cod', 'jazzcash', 'easypaisa', 'bank_transfer', 'card'] as const
 export const SHIPPING_METHODS = ['standard', 'express', 'cod'] as const
 

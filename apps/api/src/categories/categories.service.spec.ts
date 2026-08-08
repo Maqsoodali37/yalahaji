@@ -94,10 +94,10 @@ describe('CategoriesService.findAll', () => {
     // Prevents: "Electronics → Mobiles → Samsung → Galaxy S" losing its
     // fourth level because the query only ever asked for grandchildren.
     prisma.category.findMany.mockResolvedValue([
-      { id: 'a', parentId: null },
-      { id: 'b', parentId: 'a' },
-      { id: 'c', parentId: 'b' },
-      { id: 'd', parentId: 'c' },
+      { id: 'a', parentId: null, _count: { products: 0 } },
+      { id: 'b', parentId: 'a', _count: { products: 0 } },
+      { id: 'c', parentId: 'b', _count: { products: 0 } },
+      { id: 'd', parentId: 'c', _count: { products: 0 } },
     ])
 
     const tree = await service.findAll()
@@ -106,15 +106,18 @@ describe('CategoriesService.findAll', () => {
       {
         id: 'a',
         parentId: null,
+        productCount: 0,
         children: [
           {
             id: 'b',
             parentId: 'a',
+            productCount: 0,
             children: [
               {
                 id: 'c',
                 parentId: 'b',
-                children: [{ id: 'd', parentId: 'c', children: [] }],
+                productCount: 0,
+                children: [{ id: 'd', parentId: 'c', productCount: 0, children: [] }],
               },
             ],
           },
@@ -128,6 +131,24 @@ describe('CategoriesService.findAll', () => {
     await service.findAll()
     expect(prisma.category.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { isActive: true } }),
+    )
+  })
+
+  it('counts only active products per category, not every assigned product', async () => {
+    // Prevents: the home page and shop sidebar showing a category as having
+    // products when every product assigned to it is disabled — the category
+    // itself would read as active while everything inside it is unbuyable.
+    prisma.category.findMany.mockResolvedValue([
+      { id: 'a', parentId: null, _count: { products: 3 } },
+    ])
+
+    const tree = await service.findAll()
+
+    expect(tree[0].productCount).toBe(3)
+    expect(prisma.category.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: { _count: { select: { products: { where: { isActive: true } } } } },
+      }),
     )
   })
 })

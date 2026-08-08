@@ -154,6 +154,29 @@ export function canTransitionOrder(from: OrderStatus, to: OrderStatus): boolean 
   return ORDER_STATUS_FLOW[from]?.includes(to) === true
 }
 
+/**
+ * Legal payment-status transitions, enforced server-side — the admin's
+ * `PaymentStatusControl` already narrows the dropdown to these, but that is a
+ * convenience, not a control, same reasoning as `ORDER_STATUS_FLOW`.
+ *
+ * `unpaid → refunded` is deliberately absent: there is nothing to give back on
+ * an order nobody has paid for, and allowing it is exactly the "refund an
+ * unpaid order" bug this map exists to close. `refunded` is terminal — once
+ * money has gone out, the same order cannot be refunded a second time through
+ * this endpoint (see `ReturnsService.updateStatus` for the return-triggered
+ * path, which enforces the same rule and shares this reasoning).
+ */
+export const PAYMENT_STATUS_FLOW: Record<PaymentStatus, PaymentStatus[]> = {
+  unpaid: ['paid'],
+  paid: ['refunded', 'partially_refunded'],
+  partially_refunded: ['refunded'],
+  refunded: [],
+}
+
+export function canTransitionPaymentStatus(from: PaymentStatus, to: PaymentStatus): boolean {
+  return PAYMENT_STATUS_FLOW[from]?.includes(to) === true
+}
+
 /** Filters accepted by the admin order listing and CSV export. */
 export interface OrderAdminFilters {
   status?: OrderStatus
@@ -776,10 +799,23 @@ export class OrdersService {
   /**
    * Assign or clear the courier tracking number. Separate from status so a
    * parcel can be marked shipped and its tracking added in either order.
+   *
+   * Refused on a **cancelled, unpaid** order: there is no parcel to hand a
+   * courier for an order that was called off before any money changed hands,
+   * so a tracking number entered here would describe a shipment that should
+   * never leave the warehouse. A cancelled order the customer *had* paid for
+   * keeps this open — cancelling after dispatch is a real operational case,
+   * and the courier action stays available for that. Mirrors the admin's
+   * `TrackingEditor`, which disables the same control in the same case.
    */
   async setTracking(id: string, trackingNumber: string) {
-    const order = await this.prisma.order.findUnique({ where: { id }, select: { id: true } })
+    const order = await this.prisma.order.findUnique({ where: { id }, select: { id: true, status: true, paymentStatus: true } })
     if (!order) throw new NotFoundException('Order not found.')
+    if (order.status === 'cancelled' && order.paymentStatus === 'unpaid') {
+      throw new BadRequestException(
+        'Cannot assign a courier to a cancelled, unpaid order.',
+      )
+    }
     return this.prisma.order.update({
       where: { id },
       data: { trackingNumber: trackingNumber.trim() || null },
@@ -791,6 +827,18 @@ export class OrdersService {
    * Move payment status by hand — for COD this is how an order becomes `paid`
    * on collection, since no gateway callback exists to do it.
    *
+   * Two guards, both enforced here rather than only in the admin dropdown:
+   *
+   * - `canTransitionPaymentStatus` — the general rule that a refund can only
+   *   be issued against a `paid` (or `partially_refunded`) order, never an
+   *   `unpaid` one, and that `refunded` is terminal so the same order cannot
+   *   be refunded twice through this endpoint.
+   * - A **cancelled, unpaid** order accepts no payment-status change at all,
+   *   including `unpaid → paid` — there is nothing to collect on an order
+   *   that was called off before it was paid for, and leaving this open would
+   *   let a cancelled order be marked paid and then immediately "refunded"
+   *   with no real money having moved either way.
+   *
    * There is no audit-log table yet (a later phase), so the change is recorded
    * on the timeline against the order's current status. That is a trace, not a
    * full audit entry, and is called out as such in the migration plan.
@@ -798,13 +846,41 @@ export class OrdersService {
   async setPaymentStatus(id: string, paymentStatus: PaymentStatus, note?: string) {
     const order = await this.prisma.order.findUnique({ where: { id } })
     if (!order) throw new NotFoundException('Order not found.')
+
+    if (order.status === 'cancelled' && order.paymentStatus === 'unpaid') {
+      throw new BadRequestException(
+        'This order is cancelled and unpaid — there is no payment action to take.',
+      )
+    }
+
+    if (!canTransitionPaymentStatus(order.paymentStatus, paymentStatus)) {
+      throw new BadRequestException(
+        `Payment status ${order.paymentStatus} cannot move to ${paymentStatus}.`,
+      )
+    }
+
     const label = paymentStatus.replace(/_/g, ' ')
-    return this.prisma.$transaction([
-      this.prisma.order.update({ where: { id }, data: { paymentStatus } }),
-      this.prisma.orderTimeline.create({
+
+    // A conditional update, not a plain `update` — closes the race between the
+    // read above and this write. Two concurrent refund requests both passing
+    // the read would otherwise both pass the write too, issuing the refund
+    // twice. `updateMany` re-checks `paymentStatus` atomically at the database
+    // and only one of the two can match.
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.order.updateMany({
+        where: { id, paymentStatus: order.paymentStatus },
+        data: { paymentStatus },
+      })
+      if (result.count === 0) {
+        throw new BadRequestException(
+          'Payment status changed since this action was requested — reload and try again.',
+        )
+      }
+      await tx.orderTimeline.create({
         data: { orderId: id, status: order.status, note: note?.trim() || `Payment marked ${label}` },
-      }),
-    ])
+      })
+      return tx.order.findUniqueOrThrow({ where: { id } })
+    })
   }
 
   /**

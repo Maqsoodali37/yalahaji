@@ -65,13 +65,23 @@ export class CategoriesService {
    * storefront nav and shop sidebar render links from, so a row a disabled
    * parent would otherwise still surface here as a dead link that 404s when
    * clicked.
+   *
+   * Carries a `productCount` per node, scoped to `products.isActive: true` —
+   * this is a *customer-facing* count (home page category tiles, shop sidebar
+   * filter counts), so a category holding only disabled products must read as
+   * empty, the same way an inactive category itself reads as absent. This is
+   * deliberately a different count than `findAllAdmin`'s, which counts every
+   * assigned product regardless of status because staff need to see what is
+   * attached before they can reassign or reactivate it.
    */
   async findAll() {
     const rows = await this.prisma.category.findMany({
       where: { isActive: true },
       orderBy: { order: 'asc' },
+      include: { _count: { select: { products: { where: { isActive: true } } } } },
     })
-    return buildTree(rows)
+    const flat = rows.map(({ _count, ...row }) => ({ ...row, productCount: _count.products }))
+    return buildTree(flat)
   }
 
   /**

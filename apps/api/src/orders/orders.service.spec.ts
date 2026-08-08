@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing'
 import { BadRequestException, NotFoundException } from '@nestjs/common'
-import { OrdersService, canTransitionOrder } from './orders.service'
+import { OrdersService, canTransitionOrder, canTransitionPaymentStatus } from './orders.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { SettingsService } from '../settings/settings.service'
 import { CreateOrderDto } from './dto/create-order.dto'
@@ -589,6 +589,121 @@ describe('order status transitions', () => {
     expect(canTransitionOrder('refunded', 'delivered')).toBe(false)
     // Same-status is not a legal move — it would only add an empty timeline row.
     expect(canTransitionOrder('pending', 'pending')).toBe(false)
+  })
+})
+
+/**
+ * Payment-status transitions are enforced server-side, same reasoning as
+ * order-status transitions: the admin dropdown already narrows the options,
+ * but a hand-rolled request must not be able to refund money that was never
+ * collected, or refund the same order twice.
+ */
+describe('payment status transitions', () => {
+  it('allows collection and refund of a paid order', () => {
+    expect(canTransitionPaymentStatus('unpaid', 'paid')).toBe(true)
+    expect(canTransitionPaymentStatus('paid', 'refunded')).toBe(true)
+    expect(canTransitionPaymentStatus('paid', 'partially_refunded')).toBe(true)
+    expect(canTransitionPaymentStatus('partially_refunded', 'refunded')).toBe(true)
+  })
+
+  it('never allows refunding an order that was never paid', () => {
+    expect(canTransitionPaymentStatus('unpaid', 'refunded')).toBe(false)
+    expect(canTransitionPaymentStatus('unpaid', 'partially_refunded')).toBe(false)
+  })
+
+  it('treats refunded as terminal — the same order cannot be refunded twice', () => {
+    expect(canTransitionPaymentStatus('refunded', 'paid')).toBe(false)
+    expect(canTransitionPaymentStatus('refunded', 'refunded')).toBe(false)
+  })
+})
+
+/**
+ * `setPaymentStatus` and `setTracking` guards. Asserted against a Prisma
+ * double so a regression here fails a unit test rather than surfacing as a
+ * cancelled, unpaid order that can still be "refunded" or handed to a courier.
+ */
+describe('OrdersService — cancelled-order payment and courier guards', () => {
+  let service: OrdersService
+
+  const tx = {
+    order: { updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+    orderTimeline: { create: jest.fn() },
+  }
+
+  const prisma = {
+    order: { findUnique: jest.fn(), update: jest.fn() },
+    $transaction: jest.fn((work: any) => (typeof work === 'function' ? work(tx) : Promise.all(work))),
+  }
+
+  beforeEach(async () => {
+    jest.clearAllMocks()
+    prisma.$transaction.mockImplementation((work: any) =>
+      typeof work === 'function' ? work(tx) : Promise.all(work),
+    )
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        OrdersService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: SettingsService, useValue: {} },
+      ],
+    }).compile()
+
+    service = moduleRef.get(OrdersService)
+  })
+
+  it('refuses any payment-status change on a cancelled, unpaid order', async () => {
+    prisma.order.findUnique.mockResolvedValue({ id: 'o-1', status: 'cancelled', paymentStatus: 'unpaid' })
+
+    await expect(service.setPaymentStatus('o-1', 'paid')).rejects.toBeInstanceOf(BadRequestException)
+    expect(tx.order.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('refuses to refund an unpaid order even when not cancelled', async () => {
+    prisma.order.findUnique.mockResolvedValue({ id: 'o-1', status: 'pending', paymentStatus: 'unpaid' })
+
+    await expect(service.setPaymentStatus('o-1', 'refunded')).rejects.toBeInstanceOf(BadRequestException)
+    expect(tx.order.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('keeps refund available on a cancelled order that was paid', async () => {
+    prisma.order.findUnique.mockResolvedValue({ id: 'o-1', status: 'cancelled', paymentStatus: 'paid' })
+    tx.order.updateMany.mockResolvedValue({ count: 1 })
+    tx.order.findUniqueOrThrow.mockResolvedValue({ id: 'o-1', paymentStatus: 'refunded' })
+
+    await service.setPaymentStatus('o-1', 'refunded')
+
+    expect(tx.order.updateMany).toHaveBeenCalledWith({
+      where: { id: 'o-1', paymentStatus: 'paid' },
+      data: { paymentStatus: 'refunded' },
+    })
+  })
+
+  it('rejects a concurrent double-refund via the conditional update', async () => {
+    // The read saw `paid`, but another request refunded it first — the
+    // conditional updateMany matches zero rows, and this must surface as an
+    // error rather than silently doing nothing (which would look like success).
+    prisma.order.findUnique.mockResolvedValue({ id: 'o-1', status: 'delivered', paymentStatus: 'paid' })
+    tx.order.updateMany.mockResolvedValue({ count: 0 })
+
+    await expect(service.setPaymentStatus('o-1', 'refunded')).rejects.toBeInstanceOf(BadRequestException)
+    expect(tx.orderTimeline.create).not.toHaveBeenCalled()
+  })
+
+  it('refuses a courier tracking number on a cancelled, unpaid order', async () => {
+    prisma.order.findUnique.mockResolvedValue({ id: 'o-1', status: 'cancelled', paymentStatus: 'unpaid' })
+
+    await expect(service.setTracking('o-1', 'TCS-123')).rejects.toBeInstanceOf(BadRequestException)
+    expect(prisma.order.update).not.toHaveBeenCalled()
+  })
+
+  it('allows a courier tracking number on a cancelled order that was paid', async () => {
+    prisma.order.findUnique.mockResolvedValue({ id: 'o-1', status: 'cancelled', paymentStatus: 'paid' })
+    prisma.order.update.mockResolvedValue({ id: 'o-1', trackingNumber: 'TCS-123' })
+
+    await service.setTracking('o-1', 'TCS-123')
+
+    expect(prisma.order.update).toHaveBeenCalled()
   })
 })
 

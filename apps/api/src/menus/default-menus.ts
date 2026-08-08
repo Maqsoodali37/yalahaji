@@ -97,15 +97,14 @@ const PRIMARY_NAV: DefaultMenuItem[] = [
 ]
 
 export const DEFAULT_MENUS: DefaultMenu[] = [
-  { location: MenuLocation.header, name: 'Main header navigation', items: PRIMARY_NAV },
-  {
-    location: MenuLocation.mobile,
-    name: 'Mobile drawer navigation',
-    // A separate row rather than the header menu reused, because the two
-    // diverge as soon as anyone touches them — the mobile drawer is where a
-    // "Call us" or "Track order" entry belongs and the desktop header is not.
-    items: PRIMARY_NAV,
-  },
+  // One Main Menu — `header` — drives the desktop header, the mobile drawer
+  // and every mega panel. There is deliberately no separate `mobile` seed row
+  // here any more: a duplicate row diverges the moment either copy is edited,
+  // which is exactly what happened (`MobileNav` used to read a `mobile`
+  // location seeded from this same array and then silently stopped tracking
+  // it). The mobile drawer now reads this array's rows through the API and
+  // filters them client-side by `device`, the same way the desktop nav does.
+  { location: MenuLocation.header, name: 'Main Menu', items: PRIMARY_NAV },
   {
     location: MenuLocation.footer,
     name: 'Footer navigation',

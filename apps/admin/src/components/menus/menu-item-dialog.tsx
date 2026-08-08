@@ -33,6 +33,15 @@ import type {
 const INTERNAL_PATH_REGEX = /^\/(?![/\\])[^\s]*$/
 const SLUG_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/
 const MAX_MENU_URL = 2048
+
+/**
+ * The "All Categories" sentinel, mirroring `ALL_CATEGORIES_SLUG` in the
+ * storefront's `lib/menu-constants.ts`. Stored as an ordinary `targetSlug` —
+ * it passes `SLUG_REGEX` like any real slug — so picking it needs no schema
+ * change; the storefront adapter is what turns it into a link to `/shop`
+ * instead of a 404 at `/shop/all-categories`.
+ */
+const ALL_CATEGORIES_SLUG = 'all-categories'
 /** `@MaxLength(191)` on every short text column, matching the VARCHAR width. */
 const MAX_TEXT = 191
 
@@ -492,13 +501,14 @@ export function MenuItemDialog({ menuId, item, parentId, onClose }: Props) {
                   label="Category"
                   required
                   error={errors.targetSlug}
-                  hint="The list is indented by depth — a subcategory is a valid target."
+                  hint="The list is indented by depth — a subcategory is a valid target. Pick “All Categories” to link the unfiltered shop page."
                 >
                   <Select
                     value={values.targetSlug}
                     onChange={(e) => set('targetSlug', e.target.value)}
                   >
                     <option value="">Select a category…</option>
+                    <option value={ALL_CATEGORIES_SLUG}>All Categories</option>
                     {categoryOptions.map((c) => (
                       <option key={c.slug} value={c.slug}>
                         {c.label}

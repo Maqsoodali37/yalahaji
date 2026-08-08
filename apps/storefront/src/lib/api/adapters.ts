@@ -25,7 +25,7 @@ import type {
   WireCartItem, WireSizeGuideEntry, WireKitContent, WirePublicSettings,
   WireMenu, WireMenuItem, WireMenuText, WireMegaConfig,
 } from './wire'
-import { INTERNAL_PATH_REGEX, MAX_MENU_DEPTH } from '@/lib/menu-constants'
+import { INTERNAL_PATH_REGEX, MAX_MENU_DEPTH, ALL_CATEGORIES_SLUG } from '@/lib/menu-constants'
 
 // ─── Money ────────────────────────────────────────────────────────────────────
 
@@ -651,7 +651,11 @@ export const SETTINGS_FALLBACK: StoreSettings = adaptSettings({})
  * disagreed, and that shipped a card advertising ₨1,199 that opened at ₨4,999.
  */
 const MENU_ROUTES: Record<string, (slug: string) => string> = {
-  category: (slug) => `/shop/${slug}`,
+  // The `ALL_CATEGORIES_SLUG` sentinel routes to the unfiltered catalogue
+  // rather than `/shop/all-categories`, which would 404 — there is no
+  // category actually slugged that. See its own doc comment for why a
+  // sentinel string was chosen over a schema change.
+  category: (slug) => (slug === ALL_CATEGORIES_SLUG ? '/shop' : `/shop/${slug}`),
   product: (slug) => `/products/${slug}`,
   // CMS pages are top-level routes (`/about`, `/terms`, `/shipping`), not
   // nested under a `/pages` segment — there is no such segment.

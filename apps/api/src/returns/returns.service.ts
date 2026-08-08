@@ -40,6 +40,9 @@ const RETURN_INCLUDE = {
       number: true,
       total: true,
       status: true,
+      // Needed by `updateStatus` to gate the refund step — a return can only
+      // be moved to `refunded` when the order behind it was actually paid.
+      paymentStatus: true,
       createdAt: true,
       items: {
         select: { id: true, name: true, quantity: true, price: true, image: true },
@@ -176,6 +179,15 @@ export class ReturnsService {
    * Admin moderation: move a return along its lifecycle
    * (approve / reject / mark received / refund), enforcing the transition
    * rules server-side rather than trusting the button the staff member clicked.
+   *
+   * `Return.status` is the "Return" side of the order — the physical goods
+   * lifecycle, requested through received. `refunded` is the one value on it
+   * that is also a payment fact, and that is deliberate: it is the trigger for
+   * the actual money movement, not just a label. Reaching it does two things
+   * atomically — moves the return to `refunded` *and* moves the order's
+   * `paymentStatus` to `refunded` — so a return can never say "refunded" while
+   * the order's payment status disagrees, and the money side can never be
+   * changed via this path without the return record showing it happened.
    */
   async updateStatus(id: string, status: ReturnStatus, note?: string) {
     const found = await this.prisma.return.findUnique({
@@ -188,6 +200,40 @@ export class ReturnsService {
       throw new BadRequestException(
         `A return that is ${found.status} cannot move to ${status}.`,
       )
+    }
+
+    if (status === 'refunded') {
+      // The one transition that reaches beyond this row and executes a real
+      // payment refund — so it is the one gated on the order actually having
+      // been paid. Never refund money that was never collected.
+      if (found.order.paymentStatus !== 'paid') {
+        throw new BadRequestException(
+          `Cannot issue a refund: order ${found.order.number} is ${found.order.paymentStatus}, not paid.`,
+        )
+      }
+
+      return this.prisma.$transaction(async (tx) => {
+        // Conditional update, not a plain one — closes the race between the
+        // read above and this write. Two concurrent "mark refunded" actions
+        // (this endpoint and `PATCH /orders/:id/payment-status` both reach the
+        // same column) would otherwise both pass the read and both execute the
+        // refund; `updateMany`'s `where` re-checks `paymentStatus` atomically
+        // at the database, so only one can match.
+        const paid = await tx.order.updateMany({
+          where: { id: found.order.id, paymentStatus: 'paid' },
+          data: { paymentStatus: 'refunded' },
+        })
+        if (paid.count === 0) {
+          throw new BadRequestException(
+            `Order ${found.order.number}'s payment status changed since this action was requested — reload and try again.`,
+          )
+        }
+        return tx.return.update({
+          where: { id },
+          data: { status, ...(note ? { note } : {}) },
+          include: RETURN_INCLUDE,
+        })
+      })
     }
 
     return this.prisma.return.update({

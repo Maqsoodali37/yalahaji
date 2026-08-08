@@ -31,6 +31,7 @@ import {
   type FieldErrors,
 } from '@/lib/validation'
 import { FormField, inputClass } from '@/components/ui/form-field'
+import { ProductImage } from '@/components/ui/product-image'
 import {
   PAYMENT_OPTIONS,
   DEFAULT_PAYMENT_METHOD,
@@ -960,7 +961,9 @@ export function CheckoutClient() {
                   <div className="space-y-2">
                     {items.map((item) => (
                       <div key={item.id} className="flex items-center gap-3 text-sm">
-                        <div className="w-10 h-10 bg-green-tint rounded-sm flex-shrink-0" />
+                        <div className="w-10 h-10 bg-green-tint rounded-sm flex-shrink-0 overflow-hidden">
+                          <ProductImage src={item.image} alt={item.name} fallback="🕋" />
+                        </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-ink truncate">{item.name}</p>
                           <p className="text-xs text-stone">Qty {item.quantity} · {item.tier}</p>
@@ -1003,7 +1006,10 @@ export function CheckoutClient() {
                 <h3 className="font-bold text-ink mb-4">Order Summary</h3>
                 <div className="space-y-2 text-sm">
                   {items.map((item) => (
-                    <div key={item.id} className="flex justify-between gap-2">
+                    <div key={item.id} className="flex items-center gap-2">
+                      <div className="w-8 h-8 bg-green-tint rounded-sm flex-shrink-0 overflow-hidden">
+                        <ProductImage src={item.image} alt={item.name} fallback="🕋" />
+                      </div>
                       <span className="text-stone truncate flex-1">
                         {item.name} × {item.quantity}
                       </span>

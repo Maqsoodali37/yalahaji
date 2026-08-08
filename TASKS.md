@@ -96,6 +96,87 @@ are imported nowhere — delete them or make them section types; the `Locale` en
 `schema.prisma` is declared and used by nothing; `storefront-revalidation.service.ts` is
 hardcoded to menus and needs generalising once homepage config is cached.
 
+### Verify today's fix batch on real hardware (category counts, checkout images, cancel/refund guards, single Main Menu, print invoice)
+
+Seven fixes/features, written and reviewed in a cloud sandbox with no
+`node_modules`, no network (`npm`/`apt` both `403 host_not_allowed` against
+their registries, same org-level policy recorded elsewhere in this file), and
+no MySQL — so nothing here has been through `tsc`, Jest, Vitest or a real
+Prisma client. An independent adversarial review (a second agent, fresh
+context) read every changed file against every cross-file reference — types,
+imports, Prisma call shapes, spec-mock shapes — and found no defects, but that
+is not a substitute for the real toolchain. Do, on real hardware, in this
+order:
+
+- `cd apps/api && npx prisma generate && npx tsc --noEmit && npm test` — the
+  `PAYMENT_STATUS_FLOW`/`canTransitionPaymentStatus` and returns-refund-guard
+  tests are new (`orders.service.spec.ts`, `returns.service.spec.ts`), as is
+  the `categories.service.spec.ts` count test.
+- `cd apps/storefront && npx tsc --noEmit && npm test`, `cd apps/admin && npx tsc --noEmit`.
+- **Category counts:** home page category tiles and the shop sidebar should
+  show a real count per category, not `0`. Disable every product in a
+  category (leave the category itself active) and confirm its count drops to
+  `0` while a sibling category with active products still shows one.
+- **Checkout images:** add items to cart from at least two different
+  products, reach checkout, and confirm the review step and the sidebar Order
+  Summary both show the right product photo per line, not a placeholder.
+- **Cancelled + unpaid order:** cancel a `pending` COD order before payment.
+  Open it in the admin — the Payment panel and the Courier field in
+  Fulfilment should both show an explanatory message instead of controls, and
+  a hand-rolled `PATCH /orders/:id/payment-status` or `/tracking` against it
+  should 400.
+- **Cancelled + paid order:** cancel an order whose payment status is `paid`.
+  Confirm the Payment panel still offers `refunded`/`partially_refunded` and
+  the Courier field is still editable.
+- **Return-triggered refund:** create a return on a delivered, paid order,
+  moderate it through to `received`, then `refunded`. Confirm the order's
+  payment-status badge flips to `refunded` in the same action — not just the
+  return's own badge — and that a second attempt to refund the same return
+  (or the same order via the direct payment-status control) is rejected.
+  Then confirm a return on a delivered but still-**unpaid** order cannot be
+  moved to `refunded` at all.
+- **Single Main Menu:** edit an item in the admin's "Main Menu" (the renamed
+  Header tab) — add one, reorder one, mark one mobile-only. Confirm the
+  change appears in both the desktop header and the mobile drawer with no
+  second edit. There is no "Mobile drawer" tab any more; confirm nothing
+  regressed for a shop whose database still has an old `mobile`-location
+  `Menu` row from before this change (it should simply go unread).
+- **All Categories menu item:** add a `category`-type item pointing at "All
+  Categories" and confirm it opens `/shop`, not a 404.
+- **Print invoice:** open an order, click "Print invoice", confirm the new
+  tab shows only the invoice (no sidebar/topbar), that `store_name` /
+  `store_email` / `store_phone` render, and that a browser print / "Save as
+  PDF" produces a clean A4 page. Check as a `support` or `fulfillment` role
+  specifically — the settings read was moved to the public endpoint so this
+  works for those roles too, and that is the thing most likely to have been
+  missed if a future edit switches it back to the admin-only one.
+
+### Design (not started): multiple categories / products on one menu item
+
+Requested alongside the "All Categories" sentinel above, but not built this
+session — a menu item today (`MenuItem.targetSlug`) points at exactly one
+category or product. Scoped design, ready to build:
+
+- Additive nullable column, `MenuItem.targetSlugs Json?` — a JSON array of
+  slugs, alongside the existing `targetSlug` (kept for the single-select
+  case, unchanged). Mirrors the `megaConfig Json?` pattern already in the
+  schema; no backfill needed.
+- DTO: `targetSlugs?: string[]`, validated as an array of `SLUG_REGEX`-
+  matching strings, capped at some reasonable length (24, matching
+  `megaConfig`'s list caps).
+- `adaptMenuItem`'s `MENU_ROUTES.category`/`.product` need a second branch:
+  when `targetSlugs` is set, build `/shop?category=slug-a,slug-b` (or the
+  product equivalent) instead of the single-slug route.
+- Admin: the category `<Select>` in `menu-item-dialog.tsx` becomes a
+  multi-select (checkbox list, reusing `categoryOptions`) when a "multiple"
+  toggle is on; `product` needs an actual picker built for the first time (it
+  is a free-text slug input today).
+- **Blocking prerequisite, not yet done:** "Shop page ignores every query
+  parameter" (below) — `/shop?category=a,b` does nothing until the shop page
+  reads `searchParams`. Building the multi-select without that first would
+  ship a menu item that silently does nothing beyond opening the unfiltered
+  catalogue, which is a worse failure mode than not offering it yet.
+
 ### Apply the catalogue-import migrations and verify the 28 imported products
 
 Two migrations, applied in order after everything above:

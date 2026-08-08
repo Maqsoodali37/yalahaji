@@ -3,7 +3,7 @@
 import { use, useState } from 'react'
 import { DEFAULT_COUNTRY } from '@/lib/address'
 import Link from 'next/link'
-import { ArrowLeft, MapPin, User, Printer, Truck, CreditCard } from 'lucide-react'
+import { ArrowLeft, MapPin, User, Printer, Truck, CreditCard, Undo2 } from 'lucide-react'
 import { useOrder, useSetTracking, useSetPaymentStatus } from '@/hooks/use-orders'
 import { StatusUpdater } from '@/components/orders/status-updater'
 import { Panel, PanelHeader, PageHeader, Badge, ErrorState, Skeleton } from '@/components/ui/panel'
@@ -15,8 +15,9 @@ import {
   formatDateTime,
   statusClasses,
   paymentStatusClasses,
+  returnStatusClasses,
   titleCase,
-  PAYMENT_STATUSES,
+  nextPaymentStatuses,
 } from '@/lib/utils'
 import type { PaymentStatus } from '@/types'
 
@@ -82,6 +83,24 @@ export default function OrderDetailPage({
   const customerPhone = order.user?.phone ?? order.guestPhone ?? shipTo?.phone
   const customerEmail = order.user?.email ?? order.guestEmail ?? shipTo?.email
 
+  /**
+   * A cancelled order that was never paid has nothing for either action to do:
+   * no money to collect or refund, and no parcel to hand a courier. Both
+   * sections are disabled rather than hidden, so staff can see *why* — a
+   * missing control reads as a bug, a disabled one with an explanation does
+   * not. A cancelled order that *was* paid keeps both — the courier action
+   * covers cancelling after dispatch, and payment keeps the refund available.
+   */
+  const cancelledUnpaid = order.status === 'cancelled' && order.paymentStatus === 'unpaid'
+
+  // Most recent return request against this order, if any — `Return` is its
+  // own lifecycle ("the parcel came back"), deliberately kept separate from
+  // `order.status` (fulfilment) and `order.paymentStatus` (money); see
+  // PROJECT_SPEC.md, "There is no `returned` order status".
+  const activeReturn = [...order.returns].sort(
+    (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
+  )[0]
+
   return (
     <>
       <Link
@@ -101,9 +120,25 @@ export default function OrderDetailPage({
             <Badge className={paymentStatusClasses(order.paymentStatus)}>
               {titleCase(order.paymentStatus)}
             </Badge>
-            <Button variant="outline" size="sm" onClick={() => window.print()}>
+            {activeReturn && (
+              <Badge className={returnStatusClasses(activeReturn.status)}>
+                Return: {titleCase(activeReturn.status)}
+              </Badge>
+            )}
+            {/*
+              Opens the dedicated invoice route (apps/admin/src/app/orders/[id]/invoice)
+              in a new tab rather than calling `window.print()` here — this page
+              carries the sidebar, topbar and every admin control, none of which
+              belongs on a printed invoice. The invoice route renders with none
+              of that chrome and its own A4-sized print stylesheet.
+            */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open(`/orders/${order.id}/invoice`, '_blank', 'noopener')}
+            >
               <Printer className="h-3.5 w-3.5" />
-              Print
+              Print invoice
             </Button>
           </div>
         }
@@ -228,9 +263,35 @@ export default function OrderDetailPage({
           <Panel>
             <PanelHeader title="Payment" />
             <div className="panel-pad">
-              <PaymentStatusControl orderId={order.id} current={order.paymentStatus} />
+              {cancelledUnpaid ? (
+                <p className="text-sm text-ink-3">
+                  This order is <strong className="text-ink-2">cancelled</strong> and was never
+                  paid — there is no payment action to take.
+                </p>
+              ) : (
+                <PaymentStatusControl orderId={order.id} current={order.paymentStatus} />
+              )}
             </div>
           </Panel>
+
+          {activeReturn && (
+            <Panel>
+              <PanelHeader title="Return" />
+              <div className="panel-pad space-y-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <Undo2 className="h-4 w-4 text-ink-3 shrink-0" aria-hidden />
+                  <Badge className={returnStatusClasses(activeReturn.status)}>
+                    {titleCase(activeReturn.status)}
+                  </Badge>
+                </div>
+                <p className="text-ink-2">{activeReturn.reason}</p>
+                {activeReturn.note && <p className="text-ink-3 text-xs">{activeReturn.note}</p>}
+                <Link href="/returns" className="text-xs font-semibold text-green hover:underline">
+                  Moderate in Returns →
+                </Link>
+              </div>
+            </Panel>
+          )}
 
           <Panel>
             <PanelHeader title="Customer" />
@@ -289,7 +350,13 @@ export default function OrderDetailPage({
               <Row label="Payment method" value={titleCase(order.paymentMethod)} />
               <Row label="Shipping method" value={titleCase(order.shippingMethod)} />
               <div className="pt-3 border-t border-line">
-                <TrackingEditor orderId={order.id} current={order.trackingNumber ?? ''} />
+                {cancelledUnpaid ? (
+                  <p className="text-sm text-ink-3">
+                    Courier assignment is disabled — this order is cancelled and unpaid.
+                  </p>
+                ) : (
+                  <TrackingEditor orderId={order.id} current={order.trackingNumber ?? ''} />
+                )}
               </div>
               {order.notes && (
                 <div className="pt-3 border-t border-line">
@@ -370,11 +437,22 @@ function TrackingEditor({ orderId, current }: { orderId: string; current: string
   )
 }
 
-/** Move the payment status by hand — how a COD order becomes paid on collection. */
+/**
+ * Move the payment status by hand — how a COD order becomes paid on
+ * collection, and how a paid order's refund is recorded.
+ *
+ * Options are narrowed to `nextPaymentStatuses(current)` — the same legal-
+ * transition map the API enforces server-side (`PAYMENT_STATUS_FLOW` in
+ * orders.service.ts) — so `unpaid` never offers `refunded` and `refunded`
+ * never offers anything: there is nothing to give back on an order nobody
+ * paid, and the same order cannot be refunded twice.
+ */
 function PaymentStatusControl({ orderId, current }: { orderId: string; current: PaymentStatus }) {
   const { toast } = useToast()
   const setPayment = useSetPaymentStatus()
   const [next, setNext] = useState<PaymentStatus | ''>('')
+
+  const options = nextPaymentStatuses(current) as PaymentStatus[]
 
   async function apply() {
     if (!next || next === current) return
@@ -394,29 +472,39 @@ function PaymentStatusControl({ orderId, current }: { orderId: string; current: 
         <span className="text-ink-3">Current</span>
         <Badge className={paymentStatusClasses(current)}>{titleCase(current)}</Badge>
       </div>
-      <FormField label="Change to" htmlFor="payment-status">
-        <Select
-          id="payment-status"
-          value={next}
-          onChange={(e) => setNext(e.target.value as PaymentStatus)}
-        >
-          <option value="">Select…</option>
-          {PAYMENT_STATUSES.filter((s) => s !== current).map((s) => (
-            <option key={s} value={s}>
-              {titleCase(s)}
-            </option>
-          ))}
-        </Select>
-      </FormField>
-      <Button
-        className="w-full"
-        size="sm"
-        onClick={apply}
-        disabled={!next}
-        loading={setPayment.isPending}
-      >
-        Update payment
-      </Button>
+      {options.length === 0 ? (
+        <p className="text-sm text-ink-3">
+          {current === 'refunded'
+            ? 'This payment has been refunded and cannot be changed further.'
+            : 'No payment action is available for this order.'}
+        </p>
+      ) : (
+        <>
+          <FormField label="Change to" htmlFor="payment-status">
+            <Select
+              id="payment-status"
+              value={next}
+              onChange={(e) => setNext(e.target.value as PaymentStatus)}
+            >
+              <option value="">Select…</option>
+              {options.map((s) => (
+                <option key={s} value={s}>
+                  {titleCase(s)}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+          <Button
+            className="w-full"
+            size="sm"
+            onClick={apply}
+            disabled={!next}
+            loading={setPayment.isPending}
+          >
+            Update payment
+          </Button>
+        </>
+      )}
     </div>
   )
 }

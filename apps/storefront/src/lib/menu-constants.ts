@@ -38,3 +38,15 @@ export const INTERNAL_PATH_REGEX = /^\/(?![/\\])[^\s]*$/
 
 /** Matches the API's nesting cap. A cycle guard, not a design limit. */
 export const MAX_MENU_DEPTH = 10
+
+/**
+ * The "All Categories" sentinel for a `category`-type menu item.
+ *
+ * Stored as an ordinary `targetSlug` value — the API validates it with the
+ * same `SLUG_REGEX` as any real category slug, so no schema or API change was
+ * needed to add it. `adaptMenuItem` is the one place that gives it meaning:
+ * routing to `/shop` (the unfiltered catalogue) instead of `/shop/<slug>`.
+ * Chosen over `all` alone specifically so it cannot collide with a real
+ * category someone slugs "all" one day.
+ */
+export const ALL_CATEGORIES_SLUG = 'all-categories'

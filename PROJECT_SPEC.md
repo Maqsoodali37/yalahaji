@@ -356,6 +356,8 @@ Unlimited-depth category tree (parent/child via a self-relation, no depth cap en
 
 The admin screen (`apps/admin/src/app/(dashboard)/categories`) is a single tree view: native HTML5 drag-and-drop for reparenting and reordering (optimistic update, rollback on failure, blocked-drop feedback while dragging over a node's own subtree), search/status/featured filtering that keeps a matching row's ancestors visible, and bulk enable/disable/delete. `GET /categories` (public, active-only) and `GET /categories/admin/tree` (guarded, every status plus a product count) are deliberately separate endpoints rather than one route with an `includeInactive` flag — the public route carries no guard, so a flag would let anyone crawl categories staff have deliberately hidden, the same reasoning behind `/products/admin/list`.
 
+**Both category reads carry a `productCount`, but they count different things.** `findAll()` (public — home page category tiles, shop sidebar) scopes the count to `products: { where: { isActive: true } }`, so a category holding only disabled products reads as empty, the same way an inactive category itself reads as absent. `findAllAdmin()` counts every assigned product regardless of status, because staff need to see what is attached before they can reassign or reactivate it. `findAll()` used to omit the count entirely — home and shop both showed `0` for every category, since the storefront adapter's fallback (`c.productCount ?? c._count?.products ?? 0`) had nothing to read.
+
 **Soft delete, not a real row delete.** `DELETE /categories/:id` sets `isActive: false` (mirroring `ProductsService.remove`) and refuses with a 409 while the category still has subcategories or assigned products — `Product.categoryId` and the parent self-relation both default to Prisma's `RESTRICT`, so a real delete would previously have thrown a raw foreign-key 500, and a category with children but no products would have hit that same `RESTRICT` while `KitCategorySource.categoryId` (which does cascade) silently dropped its link in the same statement.
 
 **Circular hierarchy is guarded server-side**, not just prevented by the drag-and-drop UI: `assertNotCircular` walks a proposed parent's chain up to the root before every parent change (`update`, `reorder`), rejecting a move that would nest a category inside its own descendant.
@@ -378,6 +380,8 @@ Guest carts keyed by `X-Session-Id`, issued by `POST /cart/session` — unsigned
 
 ### Checkout and orders
 Guest and authenticated checkout. Order numbers are `YH-<year>-<n>-<token>` — sequence from 1001, derived inside the transaction with retry on unique-constraint collision (a `count()+1` scheme produced duplicates under concurrent checkout and drifted across year boundaries), plus a six-character random token.
+
+Checkout's two item lists (the review step and the sidebar Order Summary) render each line's `item.image` through the same `ProductImage` component the cart page already used — they used to render a plain colour swatch (review step) or no image at all (sidebar), because the API and the cart-item adapter (`c.product?.images?.[0]?.url`) already carried the image and nothing in the checkout component read it.
 
 **The token is a credential, not decoration.** See *Order tracking* below.
 
@@ -461,8 +465,18 @@ before this fix, it just never received one.
 ### Returns
 Customer-facing half: eligible orders, request creation, own-request listing. 7-day window from the recorded delivery timeline entry. Admin moderation is built — `PATCH /returns/admin/:id/status` with a server-enforced transition flow (`RETURN_STATUS_FLOW`: requested → approved/rejected → received → refunded), plus the admin queue screen with a status filter.
 
+**`Return.status` reaching `refunded` is what actually executes the payment refund.** `ReturnsService.updateStatus` gates that one transition on `order.paymentStatus === 'paid'` — a return cannot be marked refunded against an order that was never paid — and then, inside the same `$transaction`, flips the order's `paymentStatus` to `refunded` with a conditional `updateMany` (`where: { paymentStatus: 'paid' }`) rather than a plain `update`. The condition is the guard against a double refund: if the order was already refunded by another action (a concurrent request, or the direct payment-status endpoint below) between the read and the write, `count` comes back `0` and the whole transition is rejected rather than silently doing nothing. "Return" and "Refund" are consequently two different words for two different things in this codebase, matching the business rule they exist to enforce — `Return.status` is the physical-goods lifecycle, `Order.paymentStatus` is the money, and only one transition connects them.
+
+The admin order detail page surfaces the return, when one exists, as its own "Return" panel — a badge in the return's own status vocabulary (`returnStatusClasses`), separate from the order-status and payment-status badges next to it, rather than folding it into either.
+
 ### Admin order management
 The admin order screen supports server-side filtering (status, payment status, payment/shipping method, date range, total range, city/province, and a search across number, tracking, name, email and phone), allowlisted sorting, a bounded CSV export of the current view (`GET /orders/admin/export`), and bulk status change (`POST /orders/admin/bulk-status`, which skips orders whose current status cannot legally move). Tracking numbers are assigned via `PATCH /orders/:id/tracking`; payment status is moved by hand via `PATCH /orders/:id/payment-status` (how a COD order becomes `paid` on collection, since no gateway callback exists). The admin and API money/type/status shapes are mirrors — the `OrderStatus`, `ShippingMethod` and address field names in `apps/admin` must match the Prisma schema exactly, a drift that previously shipped a blank shipping block and an unreachable status.
+
+**Payment-status transitions are enforced server-side**, `PAYMENT_STATUS_FLOW`/`canTransitionPaymentStatus` in `orders.service.ts`, mirrored by `nextPaymentStatuses()` in the admin's `lib/utils.ts` exactly as `ORDER_STATUS_FLOW`/`nextStatuses` already were: `unpaid → paid` only; `paid → refunded` or `partially_refunded`; `partially_refunded → refunded`; `refunded` terminal. `unpaid → refunded` is the one transition deliberately absent — there is nothing to give back on an order nobody paid for. `setPaymentStatus` uses the same conditional-`updateMany` pattern as the return-refund path above, for the same reason.
+
+**A cancelled order that was never paid disables both the Payment and Courier admin controls.** There is nothing to collect or refund, and no parcel to hand a courier, on an order that was called off before any money changed hands — `apps/admin/src/app/(dashboard)/orders/[id]/page.tsx` replaces both controls with an explanatory message rather than hiding them outright, so staff can see why, and `setPaymentStatus`/`setTracking` refuse the same combination server-side rather than only in the dropdown. A cancelled order that **was** paid keeps both: the courier action covers cancelling after dispatch, and the payment action keeps the refund available — this is deliberately the same "cancelled ≠ unrefundable" distinction the return-refund guard makes.
+
+**The print invoice is a standalone route, not a styled print of the order-detail screen.** `apps/admin/src/app/orders/[id]/invoice` sits outside the `(dashboard)` route group specifically so it renders with none of the sidebar/topbar/admin-control chrome — the old "Print" button called `window.print()` directly on the dashboard page, which put the whole admin UI on the printout. The route re-applies `AuthGate` directly (it does not inherit the dashboard layout's), and reads company identity (`store_name`/`store_email`/`store_phone`) from the public `GET /settings/public`, not the admin-only `GET /settings/admin` — printing an invoice is a fulfilment/support task, and gating the letterhead on an `admin`/`manager`-only read would 403 exactly the staff who need it. `@page { size: A4; margin: 12mm }` in `globals.css`, scoped to `.invoice-sheet` so it cannot affect a `Ctrl+P` on any other dashboard screen.
 
 ### Reviews
 Submission requires a signed-in customer; reviews appear publicly only after moderation. Admin queue endpoint is pending.
@@ -479,14 +493,49 @@ Key/value config with Redis caching, typed reads, admin CRUD, and a public endpo
 `SettingsService.create/update/remove` are the first caller — `actor` (id, name, role, IP) is now a required parameter, resolved in `SettingsController` from `@CurrentUser()` and `req.ip`, and every write records a before/after snapshot. The admin Store Settings screen surfaces this per row and in aggregate via a "History" panel.
 
 ### Navigation menus
-Header, footer, mobile drawer and sidebar navigation is rendered from the
-database, as are the mega panels that hang off a header item. (`MenuLocation`
-also has a `mega` value for a standalone mega menu; nothing mounts one yet — a
-mega *panel* comes from a header item's `isMegaMenu` flag, not from that
-location.) `Menu` (one row per `MenuLocation`, `location` UNIQUE) plus
-`MenuItem.parentId`, a self-relation with no depth cap, mirroring `Category`. As
-there, the tree is assembled in memory from one flat SELECT rather than by nested
-Prisma `include`s, which silently truncate.
+Header, footer and sidebar navigation is rendered from the database, as are
+the mega panels that hang off a header item and the mobile drawer. (`MenuLocation`
+also has `mobile` and `mega` values; neither is used by anything that reads
+menus — see "One Main Menu, not a separate mobile one" below.) `Menu` (one row
+per `MenuLocation`, `location` UNIQUE) plus `MenuItem.parentId`, a self-relation
+with no depth cap, mirroring `Category`. As there, the tree is assembled in
+memory from one flat SELECT rather than by nested Prisma `include`s, which
+silently truncate.
+
+**One Main Menu, not a separate mobile one.** The mobile drawer (`MobileNav`)
+and the desktop header (`DesktopNav`) both read the same `header` menu and
+each filters it client-side with `matchesDevice(item, 'desktop' | 'mobile')`
+— an item's `device` field (`all` / `desktop` / `mobile`) is what tailors one
+tree to two surfaces, not two trees. This used to be two separate `Menu` rows:
+`MenuLocation.mobile` was seeded from the same array as `header` and then
+silently diverged the moment either copy was edited, because nothing kept
+them in sync — the admin's "Mobile drawer" tab let staff maintain two
+navigation trees that looked identical until they were not. `MenuLocation.mobile`
+and `.mega` remain in the Prisma enum (a removed enum value needs a migration
+against any historical row, and neither location is harmful sitting unread)
+but neither is fetched by the storefront layout, seeded by `default-menus.ts`,
+or offered as a tab in the admin Menus screen. A mega *panel*, as before, comes
+from a header item's `isMegaMenu` flag, not from the `mega` location — nothing
+has ever mounted one from there.
+
+**"All Categories" is a sentinel `targetSlug`, not a schema field.** A
+`category`-type item can point at `ALL_CATEGORIES_SLUG` (`'all-categories'`,
+defined in `apps/storefront/src/lib/menu-constants.ts` and mirrored in the
+admin item dialog) instead of a real category slug. It passes the same
+`SLUG_REGEX` as any other slug, so no migration or DTO change was needed —
+`adaptMenuItem`'s `MENU_ROUTES.category` is the one place that gives it
+meaning, routing to `/shop` instead of `/shop/all-categories`. Chosen as a
+compound word specifically so it cannot collide with a real category a shop
+slugs "all" one day.
+
+Not yet built: selecting **multiple** categories or products on one menu
+item (a shop can already link to any single category or product). See
+TASKS.md for the scoped design — a nullable `targetSlugs` JSON column,
+additive to the existing single-slug `targetSlug` — which was deliberately
+not started this session because the shop page does not yet read a
+multi-category filter from the URL (see "Shop page ignores every query
+parameter" in TASKS.md), so the feature would have nothing to filter against
+until that lands first.
 
 `linkType` discriminates what an item points at — `category`, `product`,
 `cms_page`, `brand`, `collection`, `custom` (internal path), `external`, and
@@ -498,7 +547,9 @@ column count and a `megaConfig` JSON blob holding featured slugs, a banner and
 content blocks.
 
 Public reads: `GET /menus/header`, `/footer`, `/mobile`, `/location/:location`,
-`/:id/items`. Admin CRUD and reorder under `/menus` and `/menus/admin/*`, guarded
+`/:id/items`. `/mobile` still resolves (it is a generic `byLocation` read, not
+special-cased) but nothing in the storefront calls it any more — see "One Main
+Menu, not a separate mobile one" above. Admin CRUD and reorder under `/menus` and `/menus/admin/*`, guarded
 by `STAFF_MANAGE` and audit-logged. `POST /menus/admin/publish` is guarded but not
 logged — it only purges caches, and every write that changes something is already
 logged by the mutation itself. `src/menus/default-menus.ts` is a
@@ -770,7 +821,9 @@ The alternative — number plus the email or phone the order was placed with —
 The cost is a migration that rewrote every historical order number, and a number that is longer to read aloud.
 
 ### There is no `returned` order status; `refunded` is terminal
-The admin once carried a `returned` value in its `OrderStatus` union that the Prisma enum never had, so choosing it produced a 400 from the status endpoint. Rather than add the enum value, a physical return is modelled where it belongs — the `Return` record and its own `ReturnStatus` lifecycle — and the order moves to `refunded` when a refund is issued. Keeping return state out of `OrderStatus` avoids conflating "the parcel came back" with "money went out", which are separate events with separate approvals.
+The admin once carried a `returned` value in its `OrderStatus` union that the Prisma enum never had, so choosing it produced a 400 from the status endpoint. Rather than add the enum value, a physical return is modelled where it belongs — the `Return` record and its own `ReturnStatus` lifecycle. Keeping return state out of `OrderStatus` avoids conflating "the parcel came back" with "money went out", which are separate events with separate approvals.
+
+**Correction to this decision's original wording:** a refunded return does not move `Order.status` to `refunded` — `Order.status` is left exactly where it was (typically `delivered`, since a return can only be opened against a delivered order). What actually moves is `Order.paymentStatus`, to `refunded`, and only that column — see *Admin order management* above ("`Return.status` reaching `refunded` is what actually executes the payment refund"). `OrderStatus.refunded` still exists and is still reachable directly from `delivered` via the ordinary status dropdown, for the case of a refund issued with no physical return attached to it (a goodwill refund, a pricing error) — but the return-moderation flow does not drive it, deliberately, so that "the parcel came back" (`Return.status`) and "the order's own status" stay two independently true facts about an order rather than one overwriting the other.
 
 ### The order address is copied onto `orders` as columns
 

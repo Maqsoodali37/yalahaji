@@ -139,17 +139,21 @@ export default async function LocaleLayout({ children, params }: Props) {
 
   // Every menu, fetched once here and shared through MenuProvider.
   //
-  // Four components render navigation, and each calling `fetchMenu` for
-  // itself would be four round trips for a payload that cannot differ between
+  // Three components render navigation, and each calling `fetchMenu` for
+  // itself would be three round trips for a payload that cannot differ between
   // them — the same reasoning that made CartBootstrap load shop settings once.
   // In parallel, because a footer menu has no reason to wait on a header one.
+  //
+  // There is deliberately no separate `mobile` fetch — the mobile drawer
+  // (`MobileNav`) reads the same `header` payload as the desktop nav and
+  // filters it client-side with `matchesDevice`, exactly like `DesktopNav`
+  // does for its own viewport. One Main Menu, not two that can drift.
   //
   // These reads are anonymous and cached (tag: `menus`), so they are the
   // guest view — which is also the correct thing for a crawler to receive.
   // MenuProvider re-fetches with the customer's token once auth hydrates.
-  const [header, mobile, footerMenu, sidebar] = await Promise.all([
+  const [header, footerMenu, sidebar] = await Promise.all([
     fetchMenu('header', asLocale(locale)),
-    fetchMenu('mobile', asLocale(locale)),
     fetchMenu('footer', asLocale(locale)),
     fetchMenu('sidebar', asLocale(locale)),
   ])
@@ -181,7 +185,7 @@ export default async function LocaleLayout({ children, params }: Props) {
         <OrganizationJsonLd locale={locale} />
         <NextIntlClientProvider messages={messages}>
           <Providers>
-            <MenuProvider menus={{ header, mobile, footer: footerMenu, sidebar }}>
+            <MenuProvider menus={{ header, footer: footerMenu, sidebar }}>
             {/* Reconciles the persisted cart against the server and loads
                 shipping settings once the app is interactive. */}
             <CartBootstrap />

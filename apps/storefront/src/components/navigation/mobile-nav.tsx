@@ -107,15 +107,21 @@ function TreeRow({
 /**
  * The mobile drawer's navigation tree.
  *
- * Reads the `mobile` menu and falls back to the `header` one when no mobile
- * menu is configured — a shop that has only set up one menu should still have
- * a working drawer, and an empty drawer looks like a bug rather than a
- * configuration choice.
+ * Reads the single **Main Menu** (`header` location) — there is no separate
+ * mobile menu to configure. `matchesDevice(item, 'mobile')` is what tailors
+ * the same tree to the drawer: an item authored `device: desktop` (or
+ * `desktop_only`, depending on the enum) is dropped here exactly as
+ * `DesktopNav` drops a `mobile`-only one, but both surfaces read the one
+ * `header` menu, so adding, removing, reordering or editing an item there
+ * reflects on the drawer immediately with no second edit anywhere.
+ *
+ * This used to read a standalone `mobile` `MenuLocation` that duplicated the
+ * header's content at seed time and then silently diverged the moment either
+ * one was edited — the admin "Mobile drawer" tab let staff maintain two
+ * navigation trees that looked identical until the day they were not.
  */
 export function MobileNav({ onNavigate }: { onNavigate: () => void }) {
-  const mobileMenu = useMenu('mobile')
-  const headerMenu = useMenu('header')
-  const menu = mobileMenu ?? headerMenu
+  const menu = useMenu('header')
 
   const items = (menu?.items ?? []).filter((item) => matchesDevice(item, 'mobile'))
   if (items.length === 0) return null

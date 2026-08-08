@@ -101,3 +101,55 @@
            text-[11px] font-semibold whitespace-nowrap;
   }
 }
+
+/*
+ * ─── Print invoice ────────────────────────────────────────────────────────
+ *
+ * Scoped to `.invoice-sheet` (apps/admin/src/app/orders/[id]/invoice) rather
+ * than a bare `@media print` — a global print rule would also fire the next
+ * time someone hits Ctrl+P on an ordinary dashboard screen (the order list,
+ * a product table), which is not this rule's job and not A4-shaped.
+ *
+ * `@page` sets the physical sheet: A4, with a margin narrow enough that the
+ * on-screen `.invoice-sheet` padding (p-10) does not get doubled up with the
+ * browser's own page margin when printed.
+ */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: #fff;
+  }
+
+  /* Nothing outside the sheet — most importantly no dashboard chrome, since
+     this route renders without the (dashboard) layout's sidebar/topbar, but
+     also no toolbar from this page itself (`print:hidden` already covers
+     that; this is the belt to that braces for anything a future edit adds
+     outside `.invoice-sheet` without a `print:hidden`). */
+  body * {
+    visibility: hidden;
+  }
+
+  .invoice-sheet,
+  .invoice-sheet * {
+    visibility: visible;
+  }
+
+  .invoice-sheet {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    width: 100%;
+  }
+
+  /* A line item row split across two pages reads as a data-entry error, not
+     a page break — keep each one whole. The items table itself is free to
+     break between rows on a long order. */
+  .invoice-sheet tr {
+    break-inside: avoid;
+  }
+}
