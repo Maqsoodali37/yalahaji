@@ -14,6 +14,88 @@ The single source of truth for pending work on this project.
 
 ## High
 
+### Homepage engine — make the homepage configurable (Brynstack, not YalaHaji)
+
+The framing, from the execution rules: this is not "build a YalaHaji homepage", it is
+"improve the Brynstack configurable homepage engine using YalaHaji as the reference
+store". Every section must be a database row, not a component. A fashion, electronics
+or grocery store must get the same homepage with different rows and no source changes.
+
+`HOMEPAGE_ENGINE_AUDIT.md` is the Task 01 output — read it before starting any item
+below. It lists what already exists (menu system, settings, categories, products, blog,
+kit builder, media, admin primitives) and what genuinely does not (any page/section/
+banner/collection/CMS model at all).
+
+Working rules for every item: review the existing implementation first, reuse before
+building, change only what the item needs, run `npx tsc --noEmit && npm test` in both
+apps, review the diff for stray code and for YalaHaji-specific hardcoding, then commit
+that item on its own. Do not stack a new item on top of a broken one.
+
+- **02 — Data model.** Decide and migrate the section model. Follow the `MenuItem`
+  conventions exactly: flat per-locale columns, `order`, `isActive`, `publishFrom`/
+  `publishUntil`, normalised-and-capped JSON config. No duplicate tables, no
+  YalaHaji-specific table. Check production records before changing schema.
+- **03 — Section configuration.** Generic section types only (hero, category, product,
+  collection, content, banner, bundle, journey). Each supports active/inactive, display
+  order, config, content and data source. Storefront gets one `<SectionRenderer>`;
+  `app/[locale]/page.tsx` stops importing sections by name.
+- **04 — Hero.** Configurable desktop/mobile image, heading, description, CTA + URL,
+  secondary CTA, schedule, status, order. Reuse media upload. Kills the hardcoded
+  slide array and its hardcoded `PKR 2,499`-style prices.
+- **05 — Shop by category.** Category selection, ordering, images, title, description,
+  visibility, count. Verify inactive categories are hidden, empty categories handled,
+  links correct, mobile layout correct.
+- **06 — Shop by journey.** Generic curated-collection component. YalaHaji configures
+  Before Umrah / For Ihram / During Umrah / Hajj Essentials / Gifts for Pilgrims as
+  data. None of those strings may appear in the component.
+- **07 — Product collections.** Best sellers, new arrivals, category, collection, manual
+  products, filter-based. Reuse `GET /products` and `ProductQueryDto`; do not write a
+  second ranking implementation.
+- **08 — Content + collection section.** The "Crafted for the Conscious Pilgrim" layout
+  as a generic content-plus-collection type. No component named after the campaign.
+- **09 — Bundle builder.** Reuse `KitCategory`/`KitCategorySource`/`KitContent` and
+  `/kit-categories`. "Build Your Own Umrah Kit" is configuration.
+- **10 — New arrivals & essentials.** Configured through the category/product/collection
+  system. No hardcoded product IDs.
+- **11 — Shop by budget.** Configurable price bands, no hardcoded currency or amounts.
+  Note the trap: `ProductQueryDto.minPrice`/`maxPrice` are **rupees**, unlike every other
+  money field in the API. Fix it to paisas or document it at the DTO.
+- **12 — Guides / resources.** Reuse `BlogPost` and `/blog`. Replace the hardcoded
+  `/blog/<slug>` teaser list. Do not build a second CMS.
+- **13 — Trust / benefits.** Configurable benefit items. No testimonials at this stage.
+- **14 — Multilingual.** Every section title, description, CTA and content field in
+  en/ur/ar through the existing `next-intl` + per-locale-column mechanism. No second
+  translation system. The hero currently renders English on all three locales.
+- **15 — SEO.** Meta title/description, canonical, Open Graph, structured data, language
+  URLs, sitemap. Reuse `lib/seo.ts`; move `SITE_NAME`, socials, titles and keywords out
+  of source and into settings.
+- **16 — Campaign scheduling.** Start date, end date, active, priority, so an expired
+  campaign cannot stay live. No hardcoded campaign dates.
+- **17 — Shipping & store config.** All shipping messaging from `SettingsService`.
+  Verify the threshold is consistent across homepage, product, cart and checkout.
+  Also: footer payment icons currently come from a hardcoded array, not the
+  `cod_enabled`/`online_payment_enabled`/`wallet_payment_enabled` settings.
+- **18 — Performance.** API requests, queries, image and lazy loading, caching, SSR/SSG,
+  query limits, duplicate requests. Only where there is a measurable problem. Note that
+  products/categories/blog have no caching at all today.
+- **19 — Responsive/UI.** Desktop, tablet, mobile: overflow, spacing, typography, image
+  sizing, carousels, CTA position, product and category cards, navigation.
+- **20 — White-label review.** Grep `YalaHaji|yalahaji|Umrah|Hajj|Ihram|Tabarruk` and
+  classify each hit as configuration/content (acceptable) or platform logic (not).
+  Known offenders in the audit: `hero-carousel.tsx`, `promo-split.tsx`,
+  `commitment-section.tsx`, `guides-tips.tsx`, `search-dropdown.tsx`, `lib/seo.ts`,
+  `manifest.ts`, the `HAJJ2025` coupon hint in the cart.
+- **21 — Final testing.** Lint, test and build both apps; verify homepage, APIs, admin
+  configuration, categories, products, links, mobile, locales, SEO, console, images.
+- **22 — Final code review.** Would this be acceptable if Client XYZ replaced YalaHaji
+  tomorrow? If not, refactor before calling it done.
+
+Also surfaced by the audit and worth folding into the above rather than tracking twice:
+`components/home/blog-preview.tsx`, `seasonal-banner.tsx` and `testimonials-section.tsx`
+are imported nowhere — delete them or make them section types; the `Locale` enum in
+`schema.prisma` is declared and used by nothing; `storefront-revalidation.service.ts` is
+hardcoded to menus and needs generalising once homepage config is cached.
+
 ### Apply the catalogue-import migrations and verify the 28 imported products
 
 Two migrations, applied in order after everything above:

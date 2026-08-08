@@ -705,6 +705,38 @@ Hand-written SQL under `prisma/migrations/<timestamp>_<name>/migration.sql`, wit
 
 Recorded so they are not relitigated.
 
+### The homepage engine is a sibling of the menu system, not a new pattern
+
+`HOMEPAGE_ENGINE_AUDIT.md` records the full audit. The conclusion, so it is not
+re-derived: the homepage is currently seven components hardcoded into
+`app/[locale]/page.tsx`, five of which own their own copy, and nothing in the platform
+models a page, a section, a banner, a collection or a CMS page. `MenuLinkType` already
+carries `collection`, `cms_page` and `brand` as enum values with no table behind them.
+
+The section model to build follows `MenuItem` field-for-field — flat per-locale
+columns, `order`, `isActive`, `publishFrom`/`publishUntil`, and a JSON config
+normalised and capped server-side — served through a per-key cache with explicit
+invalidation on write and a storefront revalidation ping. The alternative considered
+was a general page builder with free-form blocks. Rejected: the menu system already
+proves this shape works in this codebase, staff already know its admin screen, and a
+second block vocabulary would be a second thing to keep in sync with the storefront's
+component list.
+
+Concretely, that means "Before Umrah", "Build Your Own Umrah Kit", "Under PKR 1,000"
+and "Crafted for the Conscious Pilgrim" are rows in the YalaHaji database, and the
+same engine serves a fashion or grocery store with different rows and no source
+changes.
+
+### `ProductQueryDto.minPrice`/`maxPrice` are rupees, not paisas
+
+Noted here because it contradicts the money rule everywhere else in this document.
+`products.service.ts` multiplies both by 100 before querying. Every other money field
+in the API — order totals, coupon subtotal, all shipping settings — is paisas. Anything
+built against `/products` for price filtering must send rupees; anything built against
+`/orders`, `/coupons/validate` or `/settings` must send paisas. This is a trap, not a
+convention, and the homepage "shop by budget" work should resolve it rather than
+work around it.
+
 ### Shop config extends `settings`; no `shop_configurations` table
 A second config table would let the values staff edit drift from the values customers are charged against, with nothing to signal it. The existing table was extended with metadata columns instead.
 
