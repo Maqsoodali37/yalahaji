@@ -99,6 +99,15 @@ export interface WireProduct {
   isFeatured?: boolean
   metaTitle?: string | null
   metaDesc?: string | null
+  seoTitleEn?: string | null
+  seoTitleUr?: string | null
+  seoTitleAr?: string | null
+  seoDescEn?: string | null
+  seoDescUr?: string | null
+  seoDescAr?: string | null
+  seoKeywordsEn?: string | null
+  seoKeywordsUr?: string | null
+  seoKeywordsAr?: string | null
   createdAt: string
   updatedAt: string
   category: { id: string; slug: string; nameEn: string } | null

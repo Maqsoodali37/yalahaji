@@ -183,6 +183,15 @@ export interface Product {
   isFeatured: boolean
   metaTitle?: string | null
   metaDesc?: string | null
+  seoTitleEn?: string | null
+  seoTitleUr?: string | null
+  seoTitleAr?: string | null
+  seoDescEn?: string | null
+  seoDescUr?: string | null
+  seoDescAr?: string | null
+  seoKeywordsEn?: string | null
+  seoKeywordsUr?: string | null
+  seoKeywordsAr?: string | null
   createdAt: string
   updatedAt: string
   category: { id: string; slug: string; nameEn: string }
@@ -222,8 +231,19 @@ export interface ProductInput {
   hasGiftWrap?: boolean
   hasPreOrder?: boolean
   isFeatured?: boolean
-  metaTitle?: string
-  metaDesc?: string
+  // Nullable, not merely optional: an omitted key means "leave alone" and null
+  // means "clear it". See create-product.dto.ts for why the difference matters.
+  metaTitle?: string | null
+  metaDesc?: string | null
+  seoTitleEn?: string | null
+  seoTitleUr?: string | null
+  seoTitleAr?: string | null
+  seoDescEn?: string | null
+  seoDescUr?: string | null
+  seoDescAr?: string | null
+  seoKeywordsEn?: string | null
+  seoKeywordsUr?: string | null
+  seoKeywordsAr?: string | null
   badges?: string[]
   tags?: string[]
   variants?: VariantInput[]

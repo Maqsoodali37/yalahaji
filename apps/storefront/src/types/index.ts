@@ -65,6 +65,15 @@ export interface Product {
   name: Record<Locale, string>
   description: Record<Locale, string>
   shortDescription: Record<Locale, string>
+  /**
+   * Staff-authored SEO overrides. `Partial` rather than `Record`, because a
+   * locale with nothing written must stay distinguishable from one written as
+   * an empty string — the product page falls back to the name and short
+   * description for the first and would render a blank title for the second.
+   */
+  seoTitle?: Partial<Record<Locale, string>>
+  seoDescription?: Partial<Record<Locale, string>>
+  seoKeywords?: Partial<Record<Locale, string>>
   categoryId: string
   categorySlug: string
   images: ProductImage[]

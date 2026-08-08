@@ -76,9 +76,15 @@ export const MAX_RETURN_REASON = 2000
 export const MAX_MEDIA_URL = 191
 export const MAX_MEDIA_ALT = 191
 
-/** Per-locale SEO fields on categories (and any future SEO-bearing model). */
+/** Per-locale SEO fields on categories and products. */
 export const MAX_SEO_TITLE = 60
 export const MAX_SEO_DESC = 320
+/**
+ * Comma-separated keyword list. Sits on a TEXT column, so this cap is an
+ * editorial limit rather than a column width — past roughly this length a
+ * keyword list has stopped being a signal and started being a list.
+ */
+export const MAX_SEO_KEYWORDS = 255
 
 /** Guards against a single order being used to place a wholesale order. */
 export const MAX_ORDER_ITEMS = 50

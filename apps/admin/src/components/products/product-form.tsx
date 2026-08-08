@@ -12,6 +12,27 @@ import { useCategories } from '@/hooks/use-categories'
 import { slugify, rupeesToPaisas, paisasToRupees } from '@/lib/utils'
 import type { MediaInput, Product, ProductInput, VariantInput } from '@/types'
 
+/**
+ * Explicit field lookup per locale rather than building the key with a template
+ * literal (`` `seoTitle${locale}` ``) at each call site — a typo in a suffix
+ * there would still satisfy `keyof ProductFormValues` while writing to the
+ * wrong locale. Same shape as LOCALE_FIELDS in the categories dialog.
+ */
+type SeoKey =
+  | 'seoTitleEn' | 'seoTitleUr' | 'seoTitleAr'
+  | 'seoDescEn' | 'seoDescUr' | 'seoDescAr'
+  | 'seoKeywordsEn' | 'seoKeywordsUr' | 'seoKeywordsAr'
+
+const SEO_FIELDS: Record<
+  'En' | 'Ur' | 'Ar',
+  { label: string; title: SeoKey; desc: SeoKey; keywords: SeoKey }
+> = {
+  En: { label: 'English', title: 'seoTitleEn', desc: 'seoDescEn', keywords: 'seoKeywordsEn' },
+  Ur: { label: 'Urdu', title: 'seoTitleUr', desc: 'seoDescUr', keywords: 'seoKeywordsUr' },
+  Ar: { label: 'Arabic', title: 'seoTitleAr', desc: 'seoDescAr', keywords: 'seoKeywordsAr' },
+}
+const SEO_LOCALES: Array<'En' | 'Ur' | 'Ar'> = ['En', 'Ur', 'Ar']
+
 export interface ProductFormValues extends Omit<ProductInput, 'variants' | 'images'> {
   variants: VariantInput[]
   images: MediaInput[]
@@ -43,8 +64,15 @@ function blankValues(): ProductFormValues {
     hasGiftWrap: false,
     hasPreOrder: false,
     isFeatured: false,
-    metaTitle: '',
-    metaDesc: '',
+    seoTitleEn: '',
+    seoTitleUr: '',
+    seoTitleAr: '',
+    seoDescEn: '',
+    seoDescUr: '',
+    seoDescAr: '',
+    seoKeywordsEn: '',
+    seoKeywordsUr: '',
+    seoKeywordsAr: '',
     badges: [],
     tags: [],
     variants: [emptyVariant()],
@@ -71,8 +99,20 @@ function toFormValues(product: Product): ProductFormValues {
     hasGiftWrap: product.hasGiftWrap,
     hasPreOrder: product.hasPreOrder,
     isFeatured: product.isFeatured,
-    metaTitle: product.metaTitle ?? '',
-    metaDesc: product.metaDesc ?? '',
+    // `metaTitle`/`metaDesc` are not seeded into form state: the form writes
+    // them from the English pair on save, so reading them back would give two
+    // fields for one value and let them disagree. Products imported before the
+    // per-locale columns existed had their English SEO backfilled from them by
+    // migration 20260808100000.
+    seoTitleEn: product.seoTitleEn ?? '',
+    seoTitleUr: product.seoTitleUr ?? '',
+    seoTitleAr: product.seoTitleAr ?? '',
+    seoDescEn: product.seoDescEn ?? '',
+    seoDescUr: product.seoDescUr ?? '',
+    seoDescAr: product.seoDescAr ?? '',
+    seoKeywordsEn: product.seoKeywordsEn ?? '',
+    seoKeywordsUr: product.seoKeywordsUr ?? '',
+    seoKeywordsAr: product.seoKeywordsAr ?? '',
     badges: product.badges?.map((b) => b.badge) ?? [],
     tags: product.tags?.map((t) => t.tag) ?? [],
     isActive: product.isActive,
@@ -175,8 +215,22 @@ export function ProductForm({ product, submitting, onSubmit }: ProductFormProps)
       descAr: values.descAr.trim() || values.descEn,
       shortDescUr: values.shortDescUr.trim() || values.shortDescEn,
       shortDescAr: values.shortDescAr.trim() || values.shortDescEn,
-      metaTitle: values.metaTitle?.trim() || undefined,
-      metaDesc: values.metaDesc?.trim() || undefined,
+      // `null`, not `undefined`: JSON.stringify drops undefined keys, so a
+      // cleared box would leave the stored value untouched and the field could
+      // never be emptied once written.
+      seoTitleEn: values.seoTitleEn?.trim() || null,
+      seoTitleUr: values.seoTitleUr?.trim() || null,
+      seoTitleAr: values.seoTitleAr?.trim() || null,
+      seoDescEn: values.seoDescEn?.trim() || null,
+      seoDescUr: values.seoDescUr?.trim() || null,
+      seoDescAr: values.seoDescAr?.trim() || null,
+      seoKeywordsEn: values.seoKeywordsEn?.trim() || null,
+      seoKeywordsUr: values.seoKeywordsUr?.trim() || null,
+      seoKeywordsAr: values.seoKeywordsAr?.trim() || null,
+      // The legacy columns are written from the English pair rather than being
+      // edited separately, so they cannot drift out of step with what staff see.
+      metaTitle: values.seoTitleEn?.trim() || null,
+      metaDesc: values.seoDescEn?.trim() || null,
       variants: values.variants.map((v) => ({
         ...v,
         price: rupeesToPaisas(v.price),
@@ -397,21 +451,56 @@ export function ProductForm({ product, submitting, onSubmit }: ProductFormProps)
             )}
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField label="Meta title" hint="Defaults to the product name">
-              <Input
-                value={values.metaTitle ?? ''}
-                onChange={(e) => set('metaTitle', e.target.value)}
-                maxLength={60}
-              />
-            </FormField>
-            <FormField label="Meta description" hint="Aim for under 160 characters">
-              <Input
-                value={values.metaDesc ?? ''}
-                onChange={(e) => set('metaDesc', e.target.value)}
-                maxLength={160}
-              />
-            </FormField>
+          {/* Per-locale SEO, mirroring the categories dialog. There is no
+              separate meta title/description box: those columns are written
+              from the English pair on save, so staff edit one value, not two
+              that mean the same thing. */}
+          <div className="space-y-3">
+            {SEO_LOCALES.map((key) => {
+              const f = SEO_FIELDS[key]
+              return (
+                <div key={key} className="space-y-3 rounded-md border border-line p-3">
+                  <p className="text-xs font-semibold text-ink-2">{f.label}</p>
+                  <FormField label="SEO title" hint="Defaults to the product name">
+                    <Input
+                      value={values[f.title] ?? ''}
+                      onChange={(e) => set(f.title, e.target.value)}
+                      maxLength={60}
+                      dir={key === 'En' ? undefined : 'rtl'}
+                    />
+                  </FormField>
+                  <FormField label="SEO description" hint="Aim for under 160 characters">
+                    <Textarea
+                      value={values[f.desc] ?? ''}
+                      onChange={(e) => set(f.desc, e.target.value)}
+                      maxLength={320}
+                      rows={2}
+                      dir={key === 'En' ? undefined : 'rtl'}
+                    />
+                  </FormField>
+                  <FormField label="SEO keywords" hint="Comma separated — replaces the site-wide list for this page">
+                    <Input
+                      value={values[f.keywords] ?? ''}
+                      onChange={(e) => set(f.keywords, e.target.value)}
+                      maxLength={255}
+                      dir={key === 'En' ? undefined : 'rtl'}
+                    />
+                  </FormField>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* English-only, since that is the storefront's default locale. */}
+          <div className="rounded-md border border-line p-3">
+            <p className="text-xs font-semibold text-ink-2 mb-2">Search preview</p>
+            <p className="text-[13px] text-[#1a0dab] truncate">
+              {values.seoTitleEn?.trim() || values.nameEn.trim() || 'Product name'}
+            </p>
+            <p className="text-xs text-[#006621]">yalahaji.com › products › {values.slug || 'product-slug'}</p>
+            <p className="text-xs text-ink-3 line-clamp-2">
+              {values.seoDescEn?.trim() || 'A description will show here once written.'}
+            </p>
           </div>
 
           <FormField

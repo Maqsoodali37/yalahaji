@@ -15,6 +15,9 @@ const PRODUCT_SELECT = {
   avgRating: true, reviewCount: true, soldCount: true,
   isActive: true, isFeatured: true,
   metaTitle: true, metaDesc: true,
+  seoTitleEn: true, seoTitleUr: true, seoTitleAr: true,
+  seoDescEn: true, seoDescUr: true, seoDescAr: true,
+  seoKeywordsEn: true, seoKeywordsUr: true, seoKeywordsAr: true,
   createdAt: true, updatedAt: true,
   category: { select: { id: true, slug: true, nameEn: true } },
   // Ordered cheapest-first. Without an `orderBy` the database returns these in

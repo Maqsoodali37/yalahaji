@@ -39,6 +39,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const path = `/products/${product.slug}`
   const name = product.name[locale] ?? product.name.en
 
+  // Staff-authored SEO wins over the derived copy. Resolved per field rather
+  // than all-or-nothing: a product with an SEO title but no meta description
+  // still gets the derived description instead of falling back on both.
+  const seoTitle = product.seoTitle?.[locale]
+  const seoDescription = product.seoDescription?.[locale]
+  const seoKeywords = product.seoKeywords?.[locale]
+
   const blurb =
     product.shortDescription?.[locale] ??
     product.description?.[locale] ??
@@ -48,15 +55,21 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const inStock = product.variants?.some((v) => v.stock > 0) ?? false
 
   // Front-load the blurb, then the details that decide a click: price and stock.
-  const description = truncate(
-    [
-      blurb,
-      price ? `₨${price.toLocaleString('en-PK')}.` : '',
-      inStock ? 'In stock — Cash on Delivery available.' : '',
-    ]
-      .filter(Boolean)
-      .join(' '),
-  )
+  const description = seoDescription
+    ? truncate(seoDescription)
+    : truncate(
+        [
+          blurb,
+          price ? `₨${price.toLocaleString('en-PK')}.` : '',
+          inStock ? 'In stock — Cash on Delivery available.' : '',
+        ]
+          .filter(Boolean)
+          .join(' '),
+      )
+
+  // An authored SEO title already carries the brand, so it is used whole rather
+  // than having " — Yala Haji" appended to it a second time.
+  const socialTitle = seoTitle ?? `${name} — ${SITE_NAME}`
 
   const image = product.images?.find((i) => i.isPrimary) ?? product.images?.[0]
   const imageUrl = image?.url
@@ -64,15 +77,23 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     : `${SITE_URL}/og-image.png`
 
   return {
-    title: name, // layout's template appends "| Yala Haji"
+    // `absolute` bypasses the layout's "%s | Yala Haji" template. An authored
+    // SEO title is a complete title and already ends in the brand, so going
+    // through the template would ship "… | YalaHaji | Yala Haji". Without one,
+    // `name` goes through the template exactly as before.
+    title: seoTitle ? { absolute: seoTitle } : name,
     description,
-    // Product tags and category sharpen the generic site-wide keyword list.
-    keywords: [
-      name,
-      ...(product.tags ?? []),
-      product.categorySlug,
-      ...KEYWORDS[locale].slice(0, 8),
-    ],
+    // Authored keywords replace the derived list rather than joining it: the
+    // point of writing them is to decide what this page targets, and appending
+    // eight generic site-wide terms undoes that.
+    keywords: seoKeywords
+      ? seoKeywords.split(',').map((k) => k.trim()).filter(Boolean)
+      : [
+          name,
+          ...(product.tags ?? []),
+          product.categorySlug,
+          ...KEYWORDS[locale].slice(0, 8),
+        ],
     alternates: {
       canonical: localeUrl(locale, path),
       languages: languageAlternates(path),
@@ -82,7 +103,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       // inconsistently, and the Product JSON-LD below carries the commerce data.
       type: 'website',
       siteName: SITE_NAME,
-      title: `${name} — ${SITE_NAME}`,
+      title: socialTitle,
       description,
       url: localeUrl(locale, path),
       locale: OG_LOCALES[locale],
@@ -90,7 +111,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${name} — ${SITE_NAME}`,
+      title: socialTitle,
       description,
       images: [imageUrl],
     },

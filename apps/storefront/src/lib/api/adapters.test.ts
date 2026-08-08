@@ -195,6 +195,49 @@ describe('adaptProduct — images', () => {
   })
 })
 
+describe('adaptProduct — per-locale SEO', () => {
+  function withSeo(seo: Partial<WireProduct>): WireProduct {
+    return { ...wireProduct([]), ...seo }
+  }
+
+  it('uses the locale\'s own SEO title when one is written', () => {
+    const p = withSeo({ seoTitleEn: 'Ihram Set | YalaHaji', seoTitleUr: 'احرام سیٹ | یالا حاجی' })
+
+    expect(adaptProduct(p).seoTitle?.ur).toBe('احرام سیٹ | یالا حاجی')
+  })
+
+  it('falls back to English when a locale has no SEO title', () => {
+    // Better to index an Urdu page under an English title than under nothing.
+    const p = withSeo({ seoTitleEn: 'Ihram Set | YalaHaji', seoTitleAr: null })
+
+    expect(adaptProduct(p).seoTitle?.ar).toBe('Ihram Set | YalaHaji')
+  })
+
+  it('leaves every locale undefined when nothing is written', () => {
+    // This is the distinction `localised` cannot express. If a missing SEO
+    // title arrived as '' instead, `seoTitle[locale] ?? name` in
+    // generateMetadata would take the empty string and ship a blank <title>.
+    const seo = adaptProduct(withSeo({})).seoTitle
+
+    expect(seo).toEqual({ en: undefined, ur: undefined, ar: undefined })
+  })
+
+  it('treats a whitespace-only value as nothing written', () => {
+    // Staff clearing a box can leave a stray space behind; that must not count
+    // as a deliberately blank title.
+    const p = withSeo({ seoDescEn: 'Real copy.', seoDescUr: '   ' })
+
+    expect(adaptProduct(p).seoDescription?.ur).toBe('Real copy.')
+  })
+
+  it('carries keywords through per locale', () => {
+    const p = withSeo({ seoKeywordsEn: 'ihram, hajj', seoKeywordsAr: 'إحرام, حج' })
+
+    expect(adaptProduct(p).seoKeywords?.ar).toBe('إحرام, حج')
+    expect(adaptProduct(p).seoKeywords?.ur).toBe('ihram, hajj')
+  })
+})
+
 describe('adaptOrder — delivery address', () => {
   /**
    * The saved address the order was placed against, as it looks *today* —

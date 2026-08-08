@@ -73,6 +73,26 @@ Turning on `esModuleInterop` would fix the class of bug properly, but it changes
 
 These are the ones that cause real bugs when broken.
 
+### Prisma schema comments are `//` and `///`, never `/* */`
+
+Prisma's schema language has no block comment. A `/** … */` doc block is not
+ignored — every one of its lines is parsed as an unknown top-level statement,
+so an eight-line comment is eight `P1012` validation errors and
+`prisma generate` refuses to run at all.
+
+This is not theoretical: a `/**` block above `enum AddressLabel` shipped with
+the address work and broke the Docker build at
+`RUN npx prisma generate`, before any of the application code was reached. Use
+`///` for a doc comment attached to the next declaration and `//` for anything
+else, which is what the rest of the file already does. A trailing `//` on a
+field line is fine.
+
+`_patch_applied/20260808_check_prisma_schema.py` walks the schema and reports
+any line that is not a construct Prisma recognises at its nesting depth. It is
+not a substitute for `prisma validate`, but it runs with no database, no
+`node_modules` and no network — which is the situation in which this class of
+error keeps getting written.
+
 ### Money is stored in paisas
 
 The API stores, computes and returns **paisas** (1 rupee = 100 paisas) everywhere. The storefront converts to **rupees at the adapter boundary** via `paisasToRupees` / `rupeesToPaisas` in `lib/api/adapters.ts`.
@@ -322,6 +342,14 @@ would leave the `menus` tag attached to nothing.
 Products with tiered variants (Economy / Standard / Premium), multilingual names and descriptions, images, badges, tags, size guides, kit contents. Filtering, sorting, pagination, predictive search.
 
 **Default variant selection** is centralised in `getDefaultVariant()` (`lib/utils.ts`): cheapest in stock, falling back to cheapest overall. The product card, the product page and add-to-cart must all use it. They previously decided independently, and with the API returning variants unordered, a card could advertise ₨1,199, open at ₨4,999, and add ₨4,999 to the basket. The API now also returns variants `orderBy: { price: 'asc' }`.
+
+**Product SEO is per-locale.** `products` carries `seoTitleEn/Ur/Ar`, `seoDescEn/Ur/Ar` and `seoKeywordsEn/Ur/Ar`, flat columns mirroring `nameEn/Ur/Ar` and the identical block on `categories`. Before `20260808100000_product_locale_seo` there was only a single `metaTitle`/`metaDesc` pair, so an Urdu or Arabic product page could only ever be indexed under its English title.
+
+The old pair is kept, not dropped — dropping a column is not reversible against a populated table — and the admin form writes it from the English SEO values on save rather than offering it as a separate box, so the two cannot drift. The migration backfills the English pair from it.
+
+On the storefront the fields resolve through `localisedOptional()` in `adapters.ts`, the deliberate counterpart to `localised()`: it returns `undefined` rather than `''` for a locale nobody wrote, because `generateMetadata` does `seoTitle?.[locale] ?? name` and an empty string would win that `??` and ship a blank `<title>`. English backs the other two locales, so an English-only SEO title is used everywhere rather than nowhere. An authored title is emitted as `title: { absolute }` — it already ends in the brand, and going through the layout's `%s | Yala Haji` template would ship the brand twice. Authored keywords **replace** the derived tag/category/site-wide list rather than joining it.
+
+Every SEO field on `ProductInput` is `string | null`, not merely optional: a PATCH has to distinguish "leave alone" (key absent) from "clear it" (`null`), and `JSON.stringify` drops `undefined`. Mapping a cleared input to `undefined` is what made fifteen menu-admin fields set-once.
 
 ### Category management
 Unlimited-depth category tree (parent/child via a self-relation, no depth cap enforced anywhere — `findAll`/`findAllAdmin` fetch flat and group by `parentId` in memory rather than nesting Prisma `include`s, which silently truncated past two levels). Per-category tree thumbnail and a separate wide banner image (for the shop category page header), featured flag, per-locale SEO title/description mirroring the existing `nameEn/Ur/Ar` flat-column convention rather than a translation table.
@@ -795,6 +823,36 @@ wholesale takes effect on their next page load instead of at their next login.
 
 ### `AuditActor` is a required parameter, not inferred from a request-scoped provider
 `SettingsService.create/update/remove` take `actor: AuditActor` explicitly rather than pulling the current admin from a NestJS request-scoped injection. Request-scoped providers make every consumer of that provider request-scoped too, which is a performance cost (a new instance per request) paid by the whole dependency graph for a value only mutations need. The explicit parameter also makes "which caller forgot to pass an actor" a compile error instead of a runtime `undefined`.
+
+### The WooCommerce catalogue is a migration, not a seed script
+
+`20260808110000_catalogue_import` inserts 28 products, their variants, tags,
+badges and trilingual SEO. It is launch data the storefront cannot function
+without, so it travels with the schema rather than depending on a script
+someone remembers to run per environment. Ids are UUID v5 derived from the SKU
+and every INSERT carries `ON DUPLICATE KEY UPDATE`, so re-application converges
+rather than duplicating.
+
+Two of the CSV's SKUs — `YH-IHR-MEN-001` and `YH-FRG-OUD-001` — are already used
+by demo products in `prisma/seed.ts`. `products.sku` is UNIQUE, so those rows are
+**updated in place** rather than inserted alongside. Their stale variants are
+deactivated rather than deleted (`order_items` references them), and their demo
+photos and size guide are removed because they depict a different product. Their
+`avgRating`/`reviewCount`/`soldCount` are left alone — not CSV fields, and on a
+live row they may reflect real reviews.
+
+The migration also inserts the seed's own categories insert-only, so it does not
+silently depend on `prisma db seed` having run first: `products.categoryId` is
+NOT NULL behind a RESTRICT foreign key, so a missing category is a hard failure
+mid-import, not a degraded one.
+
+### The CSV's `Abaya` and `Hijab` are children of `abaya-hijab`, not siblings
+
+The import created `abaya` and `hijab` beneath the existing `abaya-hijab` rather
+than as two more top-level categories, which would have left three near-identical
+entries in the shop nav. `gifts` and `travel-accessories` are new top-level
+categories (`order` 7 and 8). Ajwa dates and Zamzam are filed under `gifts` as a
+merchandising decision; the pre-existing `dates-zamzam` is untouched.
 
 ---
 

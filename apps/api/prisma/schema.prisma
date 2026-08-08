@@ -159,14 +159,16 @@ model Session {
 
 // ─── Address ──────────────────────────────────────────────────────────────────
 
-/**
- * The structured half of an address label.
- *
- * `Address.label` stays free text alongside this: rows predating the enum hold
- * whatever customers typed ("Warehouse", "Ammi's house"), and it is still what
- * gets shown when `labelType` is `other`. The enum is what code groups and
- * filters on; the string is what a human reads.
- */
+/// The structured half of an address label.
+///
+/// `Address.label` stays free text alongside this: rows predating the enum hold
+/// whatever customers typed ("Warehouse", "Ammi's house"), and it is still what
+/// gets shown when `labelType` is `other`. The enum is what code groups and
+/// filters on; the string is what a human reads.
+///
+/// `///` and `//`, never `/* */` — Prisma's schema language has no block
+/// comment, and a `/**` block is parsed as eight unknown top-level statements
+/// (P1012), which is what broke `prisma generate` in the Docker build.
 enum AddressLabel {
   home
   office
@@ -331,8 +333,28 @@ model Product {
   soldCount   Int      @default(0)
   isActive    Boolean  @default(true)
   isFeatured  Boolean  @default(false)
+  // Legacy single-language SEO. Kept rather than dropped: dropping a column is
+  // not reversible against a populated table, and anything still reading these
+  // keeps working. The admin form writes them from the English pair below, so
+  // they never drift.
   metaTitle   String?
   metaDesc    String?  @db.Text
+  // Per-locale SEO, mirroring the nameEn/Ur/Ar convention and the identical
+  // block on Category. Without these an Urdu or Arabic product page could only
+  // ever be indexed under its English title and description.
+  //
+  // seoKeywords has no Category equivalent — it is new here. TEXT rather than
+  // VARCHAR(191) because a keyword list grows, and a truncation is a silent
+  // SEO regression rather than a visible one.
+  seoTitleEn    String?
+  seoTitleUr    String?
+  seoTitleAr    String?
+  seoDescEn     String?  @db.Text
+  seoDescUr     String?  @db.Text
+  seoDescAr     String?  @db.Text
+  seoKeywordsEn String?  @db.Text
+  seoKeywordsUr String?  @db.Text
+  seoKeywordsAr String?  @db.Text
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

@@ -14,6 +14,59 @@ The single source of truth for pending work on this project.
 
 ## High
 
+### Apply the catalogue-import migrations and verify the 28 imported products
+
+Two migrations, applied in order after everything above:
+
+`20260808100000_product_locale_seo` adds nine nullable SEO columns to `products`
+and backfills the English pair from `metaTitle`/`metaDesc`.
+
+`20260808110000_catalogue_import` inserts four categories and 28 products from
+`YalaHaji_WooCommerce_Import.csv`, each with one Standard variant, tags, a `sale`
+badge where the CSV had a sale price, and SEO in all three locales.
+
+The API, storefront and admin were wired for the new columns in the same change
+(`PRODUCT_SELECT`, `CreateProductDto`, `WireProduct`, `adaptProduct`,
+`generateMetadata`, the admin product form's SEO panel).
+
+**None of this touched a real MySQL.** The database runs in Docker on the
+developer's machine and was not reachable from the session that wrote it, and
+`npm`, `pip` and `apt` were all blocked, so no Prisma, `tsc` or Jest run happened.
+What *was* executed: the migration was replayed statement-by-statement against
+SQLite over a fixture seeded exactly like `prisma/seed.ts`, twice, proving it is
+idempotent and free of foreign-key violations; 1,065 assertions checked the
+resulting rows against the CSV; and the 24 storefront adapter tests (19 existing
++ 5 new SEO ones) ran green against the patched `adapters.ts` under Node's type
+stripping. SQLite is not MySQL — the file has never been parsed by mysqld.
+
+On real hardware:
+
+- `npx prisma migrate deploy && npx prisma generate` in `apps/api`, then
+  `npx tsc --noEmit && npm test`.
+- `npx tsc --noEmit` in `apps/admin` and `apps/storefront`, and `npm test` in
+  `apps/storefront`.
+- Confirm 29 products (3 seeded + 28 imported − 2 replaced), and that
+  `YH-IHR-MEN-001` and `YH-FRG-OUD-001` were updated rather than duplicated —
+  each should have exactly one active variant and several inactive ones.
+- Storefront: product listing, a detail page, each new category page, search, and
+  the EN/UR/AR switch on a product page. View source and confirm `<title>` is the
+  authored SEO title with the brand appearing **once**, and that `<meta name="keywords">`
+  is the authored list rather than the site-wide one.
+- Admin: open an imported product, confirm the three SEO locale cards are
+  populated, clear the Urdu SEO title, save, reload, and confirm it is still
+  empty — that is the `null`-vs-`undefined` path.
+
+### Product photography — all 28 imported products have no images
+
+The CSV's `Images` column was empty for every row, so the import deliberately
+wrote no `product_media`. Products render the storefront's empty state. Nothing
+is broken, but the catalogue is not sellable until photos exist.
+
+Also unset because they are not CSV fields: `hasGiftWrap` and `hasPreOrder` (both
+`false` — worth reviewing for the Gifts category and the kits), and
+`isFeatured` (the CSV said `0` for all 28, so the homepage has no featured
+products from this import).
+
 ### Apply the audit-log migration and verify the new Store Settings admin screen
 
 `20260806170000_audit_log` adds the `audit_logs` table and a new `apps/api/src/audit-log` module, wired into `SettingsService.create/update/remove` so every write to shop configuration now records who changed what and from what. The admin panel gained a **Store Settings** screen (`apps/admin/src/app/(dashboard)/settings`) built against the existing `/settings/admin` CRUD API, grouped by category, with an inline value editor per `valueType` and a per-row/aggregate change-history panel against the new `GET /audit-logs`.
@@ -293,6 +346,12 @@ The categories admin module (tree view, drag-and-drop, bulk actions, SEO/transla
 **Note on the race:** this task and the Store Settings work above were built in two concurrent sessions against the same working directory; one session's `git add -A && git commit` fired while the other's file writes were still in flight, so the commit (`349c607`) caught some files mid-edit. Running two agents against one uncommitted working tree at once is what caused it — worth avoiding, or committing more often, next time both are in flight together.
 
 ### Product form's category picker only lists root-level categories
+
+**Now blocking.** The catalogue import filed seven products under `abaya` and
+`hijab`, which are children of `abaya-hijab` — so those products cannot have their
+category re-selected in the admin form at all; opening one and saving would move
+it to whichever root category the picker happens to select. Fix this before
+anyone edits an imported abaya or hijab product.
 
 `apps/admin/src/components/products/product-form.tsx` renders `categories.data?.map((c) => <option>...)` — a flat map over the top-level tree array, so a product can only be filed directly under a root category, never a subcategory. This predates the categories admin module (the old `findAll()` returned the same root-plus-nested-children shape); it's more visible now that the tree UI supports unlimited depth end-to-end. Fix by flattening the tree with indentation, the same way `category-form-dialog.tsx`'s parent picker already does (`flattenForPicker`).
 

@@ -57,6 +57,29 @@ function localised(en: string | null, ur: string | null, ar: string | null): Rec
   return { en: base, ur: ur || base, ar: ar || base }
 }
 
+/**
+ * Like `localised`, but keeps "nothing was written here" distinguishable from
+ * an empty string.
+ *
+ * SEO overrides need that distinction. `localised` collapses a missing value to
+ * `''`, and a consumer doing `seoTitle[locale] ?? name` would then take the
+ * empty string — shipping a product page with a blank `<title>`. English still
+ * backs the other two locales, so an English-only SEO title is used everywhere
+ * rather than nowhere.
+ */
+function localisedOptional(
+  en?: string | null,
+  ur?: string | null,
+  ar?: string | null,
+): Partial<Record<Locale, string>> {
+  const base = en?.trim() || undefined
+  return {
+    en: base,
+    ur: ur?.trim() || base,
+    ar: ar?.trim() || base,
+  }
+}
+
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 /** API `hajj_guide` ⇄ storefront `hajj-guide`. */
@@ -159,6 +182,9 @@ export function adaptProduct(p: WireProduct): Product {
     name,
     description: localised(p.descEn, p.descUr, p.descAr),
     shortDescription: localised(p.shortDescEn, p.shortDescUr, p.shortDescAr),
+    seoTitle: localisedOptional(p.seoTitleEn, p.seoTitleUr, p.seoTitleAr),
+    seoDescription: localisedOptional(p.seoDescEn, p.seoDescUr, p.seoDescAr),
+    seoKeywords: localisedOptional(p.seoKeywordsEn, p.seoKeywordsUr, p.seoKeywordsAr),
     categoryId: p.category?.id ?? '',
     categorySlug: p.category?.slug ?? '',
     images: adaptImages(p.images, name.en),

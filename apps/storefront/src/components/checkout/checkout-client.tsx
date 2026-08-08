@@ -405,7 +405,17 @@ export function CheckoutClient() {
                 // one-off address would show a "Home" chip in the address book
                 // next to the customer's actual home address. `other` is the
                 // truth — checkout collects a delivery address, not a category.
-                labelType: 'other',
+                //
+                // `as const`, not just `'other'`: this object lives inside an
+                // unannotated `const addressPayload = cond ? {...} : {...}`,
+                // so nothing here is contextually typed against
+                // `PlaceOrderInput` at the point of declaration. Without the
+                // assertion TypeScript widens the literal to plain `string`
+                // right there, and that widened type is what `addressPayload`
+                // carries by the time it's spread into `placeOrder(...)` below
+                // — too late for the call's own contextual typing to narrow it
+                // back to `AddressLabelType`.
+                labelType: 'other' as const,
                 fullName: address.fullName ?? '',
                 phone: address.phone ?? '',
                 email: address.email || undefined,
